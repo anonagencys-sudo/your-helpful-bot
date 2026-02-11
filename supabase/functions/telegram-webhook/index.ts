@@ -21,20 +21,19 @@ const OPTION_VALUES = ["cto", "volume", "good_dev", "gamble"];
 
 const AFFILIATE_BUTTONS = [
   [
-    { text: "GM", prefix: "gm" },
-    { text: "AXI", prefix: "axi" },
-    { text: "TRO", prefix: "tro" },
-    { text: "TRT", prefix: "trt" },
-    { text: "FMO", prefix: "fmo" },
-    { text: "BLO", prefix: "blo" },
+    { text: "GM", url: (ca: string) => `https://gmgn.ai/r/yLK3g2v6?token=${ca}` },
+    { text: "AXI", url: (ca: string) => `https://axiom.trade/@anony?token=${ca}` },
+    { text: "TRO", url: (ca: string) => `https://t.me/menelaus_trojanbot?start=r-dankanonymous-${ca}` },
+    { text: "TRT", url: (ca: string) => `https://trojan.com/@Danoanon?token=${ca}` },
+    { text: "FMO", url: (ca: string) => `https://fomo.family/r/idankanonymous?token=${ca}` },
+    { text: "BLO", url: (ca: string) => `https://t.me/BloomSolana_bot?start=ref_2PL9YX5OSY_${ca}` },
   ],
   [
-    { text: "OKX", prefix: "okx" },
-    { text: "MAE", prefix: "mae" },
-    { text: "TRM", prefix: "trm" },
-    { text: "NEO", prefix: "neo" },
-    { text: "PHO", prefix: "pho" },
-    { text: "PEP", prefix: "pep" },
+    { text: "OKX", url: (ca: string) => `https://web3.okx.com/join/DANKANON?token=${ca}` },
+    { text: "MAE", url: (ca: string) => `https://jup.ag/swap/SOL-${ca}?ref=qkozn35gqidu` },
+    { text: "TRM", url: (ca: string) => `https://trade.padre.gg/rk/dankanon?token=${ca}` },
+    { text: "PHO", url: (ca: string) => `https://trade.padre.gg/rk/dankanon?token=${ca}` },
+    { text: "PEP", url: (ca: string) => `https://t.me/pepeboost_sol_bot?start=ref_0fi608_${ca}` },
   ],
 ];
 
@@ -47,9 +46,8 @@ function extractSolanaCA(text: string): string | null {
 }
 
 async function buildAffiliateText(ca: string): Promise<string> {
-  const affiliateCode = await getAffiliateCode();
   const lines = AFFILIATE_BUTTONS.map((row) =>
-    row.map((btn) => `<a href="https://jup.ag/swap/SOL-${ca}?ref=${affiliateCode}">${btn.text}</a>`).join("•")
+    row.map((btn) => `<a href="${btn.url(ca)}">${btn.text}</a>`).join("•")
   );
   return lines.join("\n");
 }
