@@ -231,7 +231,12 @@ async function handlePollAnswer(pollAnswer: any) {
     .single();
 
   if (!poll) return;
-  if (poll.sender_user_id !== userId) return;
+  if (poll.sender_user_id !== userId) {
+    // Notify the non-sender that only the CA poster can vote
+    const voterName = pollAnswer.user?.first_name || "User";
+    await sendMessage(poll.chat_id, `⛔ @${pollAnswer.user?.username || voterName}, only the person who posted the CA can vote on this poll.`);
+    return;
+  }
   if (poll.vote) return;
 
   await supabase
