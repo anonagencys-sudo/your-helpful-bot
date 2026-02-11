@@ -58,7 +58,7 @@ async function sendPoll(chatId: number, ca: string, username: string): Promise<a
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      question: "Info about coin",
+      question: "Info about coin\n(you can select multiple options)",
       options: POLL_OPTIONS.map(opt => ({ text: opt })),
       is_anonymous: false,
       allows_multiple_answers: true,
