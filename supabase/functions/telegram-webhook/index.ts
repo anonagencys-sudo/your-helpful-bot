@@ -81,7 +81,7 @@ async function sendMessage(chatId: number, text: string, reply_markup?: any) {
   });
 }
 
-async function sendPhoto(chatId: number, photoUrl: string, caption: string) {
+async function sendPhoto(chatId: number, photoUrl: string, caption: string, reply_markup?: any) {
   await fetch(`${TELEGRAM_API}/sendPhoto`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -90,6 +90,7 @@ async function sendPhoto(chatId: number, photoUrl: string, caption: string) {
       photo: photoUrl,
       caption,
       parse_mode: "HTML",
+      reply_markup: reply_markup ? JSON.stringify(reply_markup) : undefined,
     }),
   });
 }
@@ -115,6 +116,18 @@ async function answerCallbackQuery(callbackQueryId: string, text?: string) {
     body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
   });
 }
+
+async function deleteMessage(chatId: number, messageId: number) {
+  await fetch(`${TELEGRAM_API}/deleteMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+  });
+}
+
+const DELETE_BUTTON_MARKUP = {
+  inline_keyboard: [[{ text: "🗑️", callback_data: "delete_msg" }]],
+};
 
 async function handleMessage(message: any) {
   const text = message.text;
@@ -163,9 +176,9 @@ async function handleMessage(message: any) {
         `\n\n🔽 Buy via:\n\n${affiliateText}`;
 
       if (tokenData?.imageUrl) {
-        await sendPhoto(chatId, tokenData.imageUrl, resultText);
+        await sendPhoto(chatId, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
       } else {
-        await sendMessage(chatId, resultText);
+        await sendMessage(chatId, resultText, DELETE_BUTTON_MARKUP);
       }
     } else {
       await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.`);
@@ -329,9 +342,9 @@ async function handlePollAnswer(pollAnswer: any) {
     `\n\n🔽 Buy via:\n\n${affiliateText}`;
 
   if (tokenData?.imageUrl) {
-    await sendPhoto(poll.chat_id, tokenData.imageUrl, resultText);
+    await sendPhoto(poll.chat_id, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
   } else {
-    await sendMessage(poll.chat_id, resultText);
+    await sendMessage(poll.chat_id, resultText, DELETE_BUTTON_MARKUP);
   }
 }
 
@@ -387,6 +400,12 @@ Deno.serve(async (req) => {
       await handleMessage(update.message);
     } else if (update.poll_answer) {
       await handlePollAnswer(update.poll_answer);
+    } else if (update.callback_query) {
+      const cb = update.callback_query;
+      if (cb.data === "delete_msg" && cb.message) {
+        await deleteMessage(cb.message.chat.id, cb.message.message_id);
+        await answerCallbackQuery(cb.id, "Deleted");
+      }
     }
 
     return new Response(JSON.stringify({ ok: true }), {
