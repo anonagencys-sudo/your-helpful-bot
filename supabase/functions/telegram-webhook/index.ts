@@ -5,7 +5,16 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-const AFFILIATE_CODE = "CtkNfJ51yMih3CYwEP1F41sUmBbdLoUHmkXkW6PPpump";
+const DEFAULT_AFFILIATE_CODE = "CtkNfJ51yMih3CYwEP1F41sUmBbdLoUHmkXkW6PPpump";
+
+async function getAffiliateCode(): Promise<string> {
+  const { data } = await supabase
+    .from("bot_settings")
+    .select("value")
+    .eq("key", "affiliate_code")
+    .single();
+  return data?.value || DEFAULT_AFFILIATE_CODE;
+}
 
 const POLL_OPTIONS = ["🎰 Gamble", "📊 Volume", "👑 CTO", "❤️ I Love It"];
 const OPTION_VALUES = ["gamble", "volume", "cto", "i_love_it"];
@@ -37,11 +46,12 @@ function extractSolanaCA(text: string): string | null {
   return match ? match[0] : null;
 }
 
-function buildAffiliateKeyboard(ca: string) {
+async function buildAffiliateKeyboard(ca: string) {
+  const affiliateCode = await getAffiliateCode();
   return AFFILIATE_BUTTONS.map((row) =>
     row.map((btn) => ({
       text: btn.text,
-      url: `https://jup.ag/swap/SOL-${ca}?ref=${AFFILIATE_CODE}`,
+      url: `https://jup.ag/swap/SOL-${ca}?ref=${affiliateCode}`,
     }))
   );
 }
@@ -118,7 +128,7 @@ async function handleMessage(message: any) {
         `Voted by: @${existing.sender_username || "Unknown"}\n\n` +
         `🔽 Buy via:`;
       await sendMessage(chatId, resultText, {
-        inline_keyboard: buildAffiliateKeyboard(ca),
+        inline_keyboard: await buildAffiliateKeyboard(ca),
       });
     } else {
       await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.`);
@@ -204,7 +214,7 @@ async function handleCallbackQuery(callbackQuery: any) {
     `🔽 Buy via:`;
 
   await editMessageText(chatId, messageId, resultText, {
-    inline_keyboard: buildAffiliateKeyboard(ca),
+    inline_keyboard: await buildAffiliateKeyboard(ca),
   });
 
   await answerCallbackQuery(callbackQuery.id, `✅ You voted: ${POLL_OPTIONS[OPTION_VALUES.indexOf(vote)]}`);
