@@ -187,12 +187,19 @@ async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24
     const data = await res.json();
     const pair = data?.pairs?.[0];
     if (!pair) return null;
+
+    // Try info.imageUrl first, then fall back to dd.dexscreener.com token icon
+    let imageUrl = pair.info?.imageUrl || null;
+    if (!imageUrl && pair.baseToken?.address) {
+      imageUrl = `https://dd.dexscreener.com/ds-data/tokens/solana/${pair.baseToken.address}.png`;
+    }
+
     return {
       marketCap: pair.marketCap ? `$${Number(pair.marketCap).toLocaleString()}` : "N/A",
       volume24h: pair.volume?.h24 ? `$${Number(pair.volume.h24).toLocaleString()}` : "N/A",
       priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
       pairName: pair.baseToken?.name || "Unknown",
-      imageUrl: pair.info?.imageUrl || null,
+      imageUrl,
     };
   } catch (err) {
     console.error("DexScreener fetch error:", err);
