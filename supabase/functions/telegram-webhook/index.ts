@@ -46,14 +46,12 @@ function extractSolanaCA(text: string): string | null {
   return match ? match[0] : null;
 }
 
-async function buildAffiliateKeyboard(ca: string) {
+async function buildAffiliateText(ca: string): Promise<string> {
   const affiliateCode = await getAffiliateCode();
-  return AFFILIATE_BUTTONS.map((row) =>
-    row.map((btn) => ({
-      text: btn.text,
-      url: `https://jup.ag/swap/SOL-${ca}?ref=${affiliateCode}`,
-    }))
+  const lines = AFFILIATE_BUTTONS.map((row) =>
+    row.map((btn) => `<a href="https://jup.ag/swap/SOL-${ca}?ref=${affiliateCode}">${btn.text}</a>`).join("•")
   );
+  return lines.join("\n");
 }
 
 async function sendPoll(chatId: number, ca: string, username: string): Promise<any> {
@@ -127,14 +125,13 @@ async function handleMessage(message: any) {
   if (existing) {
     // Show previous result
     if (existing.vote) {
+      const affiliateText = await buildAffiliateText(ca);
       const resultText = `📊 <b>Info for this coin</b>\n\n` +
         `CA: <code>${ca}</code>\n` +
         `Result: <b>${POLL_OPTIONS[OPTION_VALUES.indexOf(existing.vote)]}</b>\n` +
         `Voted by: @${existing.sender_username || "Unknown"}\n\n` +
-        `🔽 Buy via:`;
-      await sendMessage(chatId, resultText, {
-        inline_keyboard: await buildAffiliateKeyboard(ca),
-      });
+        `🔽 Buy via:\n${affiliateText}`;
+      await sendMessage(chatId, resultText);
     } else {
       await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.`);
     }
@@ -205,16 +202,15 @@ async function handlePollAnswer(pollAnswer: any) {
     ? `\n🪙 <b>${tokenData.pairName}</b>\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}\n`
     : "";
 
+  const affiliateText = await buildAffiliateText(poll.contract_address);
   const resultText = `📊 <b>Info about coin</b>\n\n` +
     `CA: <code>${poll.contract_address}</code>\n` +
     `Result: <b>${POLL_OPTIONS[optionIds[0]]}</b>\n` +
     `Voted by: @${poll.sender_username || "Unknown"}\n` +
     marketInfo +
-    `\n🔽 Buy via:`;
+    `\n🔽 Buy via:\n${affiliateText}`;
 
-  await sendMessage(poll.chat_id, resultText, {
-    inline_keyboard: await buildAffiliateKeyboard(poll.contract_address),
-  });
+  await sendMessage(poll.chat_id, resultText);
 }
 
 Deno.serve(async (req) => {
