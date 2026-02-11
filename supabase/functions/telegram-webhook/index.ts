@@ -313,9 +313,9 @@ async function handlePollAnswer(pollAnswer: any) {
 
   if (!poll) return;
   if (poll.sender_user_id !== userId) {
-    // Notify the non-sender that only the CA poster can vote
     const voterName = pollAnswer.user?.first_name || "User";
-    await sendMessage(poll.chat_id, `⛔ @${pollAnswer.user?.username || voterName}, only the person who posted the CA can vote on this poll.`);
+    const pollLink = poll.message_id ? `\n\n👉 <a href="https://t.me/c/${String(poll.chat_id).replace('-100', '')}/${poll.message_id}">Jump to poll</a>` : "";
+    await sendMessage(poll.chat_id, `⛔ @${pollAnswer.user?.username || voterName}, only the person who posted the CA can vote on this poll.${pollLink}`);
     return;
   }
   if (poll.vote) return;
