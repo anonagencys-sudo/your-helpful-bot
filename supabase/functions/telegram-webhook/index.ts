@@ -144,7 +144,12 @@ async function handleMessage(message: any) {
       const voteLabels = existing.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
 
       const marketInfo = tokenData
-        ? `\n\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}`
+        ? `\n\n📊 <b>Stats</b>\n` +
+          `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n` +
+          `├ MC      ${tokenData.marketCap}\n` +
+          `├ Vol     ${tokenData.volume24h}\n` +
+          `├ LP      ${tokenData.liquidity}\n` +
+          `└ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}`
         : "";
 
       const resultText = `📊 <b>Information about this coin</b>\n\n` +
@@ -188,23 +193,45 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
-async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24h: string; priceUsd: string; pairName: string; imageUrl: string | null }| null> {
+interface TokenData {
+  priceUsd: string;
+  priceChange: string;
+  marketCap: string;
+  volume24h: string;
+  liquidity: string;
+  change1h: string;
+  buys: string;
+  sells: string;
+  pairName: string;
+  imageUrl: string | null;
+}
+
+async function fetchTokenData(ca: string): Promise<TokenData | null> {
   try {
     const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
     const data = await res.json();
     const pair = data?.pairs?.[0];
     if (!pair) return null;
 
-    // Try info.imageUrl first, then fall back to dd.dexscreener.com token icon
     let imageUrl = pair.info?.imageUrl || null;
     if (!imageUrl && pair.baseToken?.address) {
       imageUrl = `https://dd.dexscreener.com/ds-data/tokens/solana/${pair.baseToken.address}.png`;
     }
 
+    const priceChange24h = pair.priceChange?.h24 != null ? `${pair.priceChange.h24 >= 0 ? "+" : ""}${pair.priceChange.h24}%` : "N/A";
+    const change1h = pair.priceChange?.h1 != null ? `${pair.priceChange.h1 >= 0 ? "+" : ""}${pair.priceChange.h1}%` : "N/A";
+    const buys = pair.txns?.h1?.buys != null ? String(pair.txns.h1.buys) : "N/A";
+    const sells = pair.txns?.h1?.sells != null ? String(pair.txns.h1.sells) : "N/A";
+
     return {
+      priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
+      priceChange: priceChange24h,
       marketCap: pair.marketCap ? `$${formatNumber(Number(pair.marketCap))}` : "N/A",
       volume24h: pair.volume?.h24 ? `$${formatNumber(Number(pair.volume.h24))}` : "N/A",
-      priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
+      liquidity: pair.liquidity?.usd ? `$${formatNumber(Number(pair.liquidity.usd))}` : "N/A",
+      change1h,
+      buys,
+      sells,
       pairName: pair.baseToken?.name || "Unknown",
       imageUrl,
     };
@@ -258,7 +285,12 @@ async function handlePollAnswer(pollAnswer: any) {
 
   const coinName = tokenData?.pairName || "Unknown";
   const marketInfo = tokenData
-    ? `\n\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}`
+    ? `\n\n📊 <b>Stats</b>\n` +
+      `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n` +
+      `├ MC      ${tokenData.marketCap}\n` +
+      `├ Vol     ${tokenData.volume24h}\n` +
+      `├ LP      ${tokenData.liquidity}\n` +
+      `└ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}`
     : "";
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
