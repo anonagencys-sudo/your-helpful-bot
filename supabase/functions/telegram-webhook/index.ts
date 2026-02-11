@@ -75,7 +75,21 @@ async function sendMessage(chatId: number, text: string, reply_markup?: any) {
       chat_id: chatId,
       text,
       parse_mode: "HTML",
+      disable_web_page_preview: true,
       reply_markup: reply_markup ? JSON.stringify(reply_markup) : undefined,
+    }),
+  });
+}
+
+async function sendPhoto(chatId: number, photoUrl: string, caption: string) {
+  await fetch(`${TELEGRAM_API}/sendPhoto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: photoUrl,
+      caption,
+      parse_mode: "HTML",
     }),
   });
 }
@@ -124,13 +138,28 @@ async function handleMessage(message: any) {
   if (existing) {
     // Show previous result
     if (existing.vote) {
+      const tokenData = await fetchTokenData(ca);
       const affiliateText = await buildAffiliateText(ca);
+      const coinName = tokenData?.pairName || "Unknown";
+      const voteLabels = existing.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
+
+      const marketInfo = tokenData
+        ? `\n\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}`
+        : "";
+
       const resultText = `📊 <b>Info for this coin</b>\n\n` +
+        `🪙 <b>${coinName}</b>\n\n` +
         `CA: <code>${ca}</code>\n\n` +
-        `Result: <b>${POLL_OPTIONS[OPTION_VALUES.indexOf(existing.vote)]}</b>\n\n` +
-        `Voted by: @${existing.sender_username || "Unknown"}\n\n` +
-        `🔽 Buy via:\n\n${affiliateText}`;
-      await sendMessage(chatId, resultText);
+        `Result: <b>${voteLabels}</b>\n\n` +
+        `Voted by: @${existing.sender_username || "Unknown"}` +
+        marketInfo +
+        `\n\n🔽 Buy via:\n\n${affiliateText}`;
+
+      if (tokenData?.imageUrl) {
+        await sendPhoto(chatId, tokenData.imageUrl, resultText);
+      } else {
+        await sendMessage(chatId, resultText);
+      }
     } else {
       await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.`);
     }
@@ -152,7 +181,7 @@ async function handleMessage(message: any) {
   });
 }
 
-async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24h: string; priceUsd: string; pairName: string } | null> {
+async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24h: string; priceUsd: string; pairName: string; imageUrl: string | null }| null> {
   try {
     const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
     const data = await res.json();
@@ -163,6 +192,7 @@ async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24
       volume24h: pair.volume?.h24 ? `$${Number(pair.volume.h24).toLocaleString()}` : "N/A",
       priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
       pairName: pair.baseToken?.name || "Unknown",
+      imageUrl: pair.info?.imageUrl || null,
     };
   } catch (err) {
     console.error("DexScreener fetch error:", err);
@@ -198,20 +228,26 @@ async function handlePollAnswer(pollAnswer: any) {
   // Fetch market data
   const tokenData = await fetchTokenData(poll.contract_address);
 
+  const coinName = tokenData?.pairName || "Unknown";
   const marketInfo = tokenData
-    ? `\n\n🪙 <b>${tokenData.pairName}</b>\n\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}`
+    ? `\n\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}`
     : "";
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
   const affiliateText = await buildAffiliateText(poll.contract_address);
   const resultText = `📊 <b>Info about coin</b>\n\n` +
+    `🪙 <b>${coinName}</b>\n\n` +
     `CA: <code>${poll.contract_address}</code>\n\n` +
     `Result: <b>${voteLabels}</b>\n\n` +
     `Voted by: @${poll.sender_username || "Unknown"}` +
     marketInfo +
     `\n\n🔽 Buy via:\n\n${affiliateText}`;
 
-  await sendMessage(poll.chat_id, resultText);
+  if (tokenData?.imageUrl) {
+    await sendPhoto(poll.chat_id, tokenData.imageUrl, resultText);
+  } else {
+    await sendMessage(poll.chat_id, resultText);
+  }
 }
 
 Deno.serve(async (req) => {
