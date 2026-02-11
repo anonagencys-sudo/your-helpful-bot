@@ -150,7 +150,8 @@ async function handleMessage(message: any) {
           `├ Vol     ${tokenData.volume24h}\n` +
           `├ LP      ${tokenData.liquidity}\n` +
           `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
-          `└ FDV     ${tokenData.fdv}`
+          `├ FDV     ${tokenData.fdv}\n` +
+          `└ ATH     ${tokenData.ath}`
         : "";
 
       const resultText = `📊 <b>Information about this coin</b>\n\n` +
@@ -204,6 +205,7 @@ interface TokenData {
   buys: string;
   sells: string;
   fdv: string;
+  ath: string;
   pairName: string;
   imageUrl: string | null;
 }
@@ -225,6 +227,23 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
     const buys = pair.txns?.h1?.buys != null ? String(pair.txns.h1.buys) : "N/A";
     const sells = pair.txns?.h1?.sells != null ? String(pair.txns.h1.sells) : "N/A";
 
+    // Fetch ATH from CoinGecko (free, no key needed for low volume)
+    let athStr = "N/A";
+    try {
+      const cgRes = await fetch(`https://api.coingecko.com/api/v3/coins/solana/contract/${ca}`);
+      if (cgRes.ok) {
+        const cgData = await cgRes.json();
+        const athPrice = cgData?.market_data?.ath?.usd;
+        const athChangePct = cgData?.market_data?.ath_change_percentage?.usd;
+        if (athPrice != null) {
+          athStr = `$${formatNumber(Number(athPrice))}`;
+          if (athChangePct != null) {
+            athStr += ` (${athChangePct >= 0 ? "+" : ""}${Number(athChangePct).toFixed(0)}%)`;
+          }
+        }
+      }
+    } catch (_) { /* CoinGecko unavailable, keep N/A */ }
+
     return {
       priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
       priceChange: priceChange24h,
@@ -232,6 +251,7 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
       volume24h: pair.volume?.h24 ? `$${formatNumber(Number(pair.volume.h24))}` : "N/A",
       liquidity: pair.liquidity?.usd ? `$${formatNumber(Number(pair.liquidity.usd))}` : "N/A",
       fdv: pair.fdv ? `$${formatNumber(Number(pair.fdv))}` : "N/A",
+      ath: athStr,
       change1h,
       buys,
       sells,
@@ -294,7 +314,8 @@ async function handlePollAnswer(pollAnswer: any) {
       `├ Vol     ${tokenData.volume24h}\n` +
       `├ LP      ${tokenData.liquidity}\n` +
       `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
-      `└ FDV     ${tokenData.fdv}`
+      `├ FDV     ${tokenData.fdv}\n` +
+      `└ ATH     ${tokenData.ath}`
     : "";
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
