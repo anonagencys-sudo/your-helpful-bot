@@ -149,7 +149,8 @@ async function handleMessage(message: any) {
           `├ MC      ${tokenData.marketCap}\n` +
           `├ Vol     ${tokenData.volume24h}\n` +
           `├ LP      ${tokenData.liquidity}\n` +
-          `└ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}`
+          `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
+          `└ FDV     ${tokenData.fdv}`
         : "";
 
       const resultText = `📊 <b>Information about this coin</b>\n\n` +
@@ -202,6 +203,7 @@ interface TokenData {
   change1h: string;
   buys: string;
   sells: string;
+  fdv: string;
   pairName: string;
   imageUrl: string | null;
 }
@@ -229,6 +231,7 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
       marketCap: pair.marketCap ? `$${formatNumber(Number(pair.marketCap))}` : "N/A",
       volume24h: pair.volume?.h24 ? `$${formatNumber(Number(pair.volume.h24))}` : "N/A",
       liquidity: pair.liquidity?.usd ? `$${formatNumber(Number(pair.liquidity.usd))}` : "N/A",
+      fdv: pair.fdv ? `$${formatNumber(Number(pair.fdv))}` : "N/A",
       change1h,
       buys,
       sells,
@@ -290,7 +293,8 @@ async function handlePollAnswer(pollAnswer: any) {
       `├ MC      ${tokenData.marketCap}\n` +
       `├ Vol     ${tokenData.volume24h}\n` +
       `├ LP      ${tokenData.liquidity}\n` +
-      `└ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}`
+      `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
+      `└ FDV     ${tokenData.fdv}`
     : "";
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
