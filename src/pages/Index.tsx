@@ -30,14 +30,7 @@ const Index = () => {
   const setWebhook = async () => {
     setStatus("loading");
     try {
-      const res = await fetch(
-        `https://api.telegram.org/bot${await getToken()}/setWebhook`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: WEBHOOK_URL }),
-        }
-      );
+      const res = await fetch(`${WEBHOOK_URL}?action=register`);
       const data = await res.json();
       if (data.ok) {
         setStatus("success");
@@ -55,9 +48,7 @@ const Index = () => {
   const checkWebhook = async () => {
     setStatus("loading");
     try {
-      const res = await fetch(
-        `https://api.telegram.org/bot${await getToken()}/getWebhookInfo`
-      );
+      const res = await fetch(`${WEBHOOK_URL}?action=status`);
       const data = await res.json();
       setWebhookInfo(data.result);
       setStatus("idle");
@@ -65,14 +56,6 @@ const Index = () => {
       setStatus("error");
       setMessage(String(err));
     }
-  };
-
-  const getToken = async () => {
-    // We'll call the edge function to get bot info instead of exposing token
-    // For setup, user needs to provide token client-side temporarily
-    const token = prompt("Enter your Telegram Bot Token:");
-    if (!token) throw new Error("No token provided");
-    return token;
   };
 
   return (
