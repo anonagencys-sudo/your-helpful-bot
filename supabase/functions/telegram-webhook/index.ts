@@ -147,10 +147,10 @@ async function handleMessage(message: any) {
         ? `\n\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}`
         : "";
 
-      const resultText = `📊 <b>Info for this coin</b>\n\n` +
+      const resultText = `📊 <b>Information about this coin</b>\n\n` +
         `🪙 <b>${coinName}</b>\n\n` +
         `CA: <code>${ca}</code>\n\n` +
-        `Result: <b>${voteLabels}</b>\n\n` +
+        `Information: <b>${voteLabels}</b>\n\n` +
         `Voted by: @${existing.sender_username || "Unknown"}` +
         marketInfo +
         `\n\n🔽 Buy via:\n\n${affiliateText}`;
@@ -263,10 +263,10 @@ async function handlePollAnswer(pollAnswer: any) {
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
   const affiliateText = await buildAffiliateText(poll.contract_address);
-  const resultText = `📊 <b>Info about coin</b>\n\n` +
+  const resultText = `📊 <b>Information about coin</b>\n\n` +
     `🪙 <b>${coinName}</b>\n\n` +
     `CA: <code>${poll.contract_address}</code>\n\n` +
-    `Result: <b>${voteLabels}</b>\n\n` +
+    `Information: <b>${voteLabels}</b>\n\n` +
     `Voted by: @${poll.sender_username || "Unknown"}` +
     marketInfo +
     `\n\n🔽 Buy via:\n\n${affiliateText}`;
