@@ -239,6 +239,15 @@ async function handlePollAnswer(pollAnswer: any) {
     .update({ vote: voteStr, voted_at: new Date().toISOString() })
     .eq("id", poll.id);
 
+  // Delete the poll message
+  if (poll.message_id) {
+    await fetch(`${TELEGRAM_API}/deleteMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: poll.chat_id, message_id: poll.message_id }),
+    });
+  }
+
   // Fetch market data
   const tokenData = await fetchTokenData(poll.contract_address);
 
