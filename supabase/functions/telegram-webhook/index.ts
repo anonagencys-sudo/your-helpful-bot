@@ -156,6 +156,24 @@ async function handleMessage(message: any) {
   });
 }
 
+async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24h: string; priceUsd: string; pairName: string } | null> {
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
+    const data = await res.json();
+    const pair = data?.pairs?.[0];
+    if (!pair) return null;
+    return {
+      marketCap: pair.marketCap ? `$${Number(pair.marketCap).toLocaleString()}` : "N/A",
+      volume24h: pair.volume?.h24 ? `$${Number(pair.volume.h24).toLocaleString()}` : "N/A",
+      priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
+      pairName: pair.baseToken?.name || "Unknown",
+    };
+  } catch (err) {
+    console.error("DexScreener fetch error:", err);
+    return null;
+  }
+}
+
 async function handlePollAnswer(pollAnswer: any) {
   const pollId = pollAnswer.poll_id;
   const userId = pollAnswer.user?.id;
@@ -165,7 +183,6 @@ async function handlePollAnswer(pollAnswer: any) {
 
   const vote = OPTION_VALUES[optionIds[0]];
 
-  // Find the poll by telegram_poll_id
   const { data: poll } = await supabase
     .from("polls")
     .select("*")
@@ -173,25 +190,27 @@ async function handlePollAnswer(pollAnswer: any) {
     .single();
 
   if (!poll) return;
-
-  // Only the sender can vote
   if (poll.sender_user_id !== userId) return;
-
-  // Already voted
   if (poll.vote) return;
 
-  // Record the vote
   await supabase
     .from("polls")
     .update({ vote, voted_at: new Date().toISOString() })
     .eq("id", poll.id);
 
-  // Send affiliate buttons as a follow-up message
+  // Fetch market data
+  const tokenData = await fetchTokenData(poll.contract_address);
+
+  const marketInfo = tokenData
+    ? `\n🪙 <b>${tokenData.pairName}</b>\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}\n`
+    : "";
+
   const resultText = `📊 <b>Info about coin</b>\n\n` +
     `CA: <code>${poll.contract_address}</code>\n` +
     `Result: <b>${POLL_OPTIONS[optionIds[0]]}</b>\n` +
-    `Voted by: @${poll.sender_username || "Unknown"}\n\n` +
-    `🔽 Buy via:`;
+    `Voted by: @${poll.sender_username || "Unknown"}\n` +
+    marketInfo +
+    `\n🔽 Buy via:`;
 
   await sendMessage(poll.chat_id, resultText, {
     inline_keyboard: await buildAffiliateKeyboard(poll.contract_address),
