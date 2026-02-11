@@ -181,7 +181,8 @@ async function handleMessage(message: any) {
         await sendMessage(chatId, resultText, DELETE_BUTTON_MARKUP);
       }
     } else {
-      await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.`);
+      const pollLink = existing.message_id ? `\n\n👉 <a href="https://t.me/c/${String(chatId).replace('-100', '')}/${existing.message_id}">Jump to poll</a>` : "";
+      await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.${pollLink}`);
     }
     return;
   }
