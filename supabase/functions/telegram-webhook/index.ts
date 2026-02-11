@@ -163,8 +163,7 @@ async function handleMessage(message: any) {
           `├ Vol     ${tokenData.volume24h}\n` +
           `├ LP      ${tokenData.liquidity}\n` +
           `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
-          `├ FDV     ${tokenData.fdv}\n` +
-          `└ ATH     ${tokenData.ath}`
+          `└ FDV     ${tokenData.fdv}`
         : "";
 
       const resultText = `📊 <b>Information about this coin</b>\n\n` +
@@ -346,8 +345,7 @@ async function handlePollAnswer(pollAnswer: any) {
       `├ Vol     ${tokenData.volume24h}\n` +
       `├ LP      ${tokenData.liquidity}\n` +
       `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
-      `├ FDV     ${tokenData.fdv}\n` +
-      `└ ATH     ${tokenData.ath}`
+      `└ FDV     ${tokenData.fdv}`
     : "";
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
