@@ -74,6 +74,30 @@ export type Database = {
         }
         Relationships: []
       }
+      token_ath: {
+        Row: {
+          coin_name: string | null
+          contract_address: string
+          id: string
+          max_price_usd: number
+          updated_at: string
+        }
+        Insert: {
+          coin_name?: string | null
+          contract_address: string
+          id?: string
+          max_price_usd?: number
+          updated_at?: string
+        }
+        Update: {
+          coin_name?: string | null
+          contract_address?: string
+          id?: string
+          max_price_usd?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
