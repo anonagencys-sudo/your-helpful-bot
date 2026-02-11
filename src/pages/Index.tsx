@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Bot, Zap, CheckCircle, AlertCircle, Loader2, ExternalLink, BarChart3, Users } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Bot, Zap, CheckCircle, AlertCircle, Loader2, ExternalLink, BarChart3, Users, Settings, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 
 const WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram-webhook`;
@@ -11,6 +12,20 @@ const Index = () => {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const [webhookInfo, setWebhookInfo] = useState<any>(null);
+  const [affiliateCode, setAffiliateCode] = useState("");
+  const [affiliateSaving, setAffiliateSaving] = useState(false);
+  const [affiliateMsg, setAffiliateMsg] = useState("");
+
+  useEffect(() => {
+    supabase
+      .from("bot_settings")
+      .select("value")
+      .eq("key", "affiliate_code")
+      .single()
+      .then(({ data }) => {
+        if (data) setAffiliateCode(data.value);
+      });
+  }, []);
 
   const setWebhook = async () => {
     setStatus("loading");
@@ -180,6 +195,55 @@ const Index = () => {
                   <span className="text-foreground">{webhookInfo.last_error_message || "None"}</span>
                 </div>
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Affiliate Config */}
+        <Card className="bg-card border-border/50 mb-6">
+          <CardHeader>
+            <CardTitle className="text-foreground flex items-center gap-2">
+              <Settings className="w-5 h-5 text-primary" />
+              Affiliate Configuration
+            </CardTitle>
+            <CardDescription>
+              Set the Jupiter referral code used in all swap buttons.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-3">
+              <Input
+                value={affiliateCode}
+                onChange={(e) => setAffiliateCode(e.target.value)}
+                placeholder="Enter your Jupiter affiliate/referral code"
+                className="font-mono text-sm"
+              />
+              <Button
+                variant="secondary"
+                disabled={affiliateSaving}
+                onClick={async () => {
+                  setAffiliateSaving(true);
+                  setAffiliateMsg("");
+                  const { error } = await supabase
+                    .from("bot_settings" as any)
+                    .update({ value: affiliateCode, updated_at: new Date().toISOString() } as any)
+                    .eq("key", "affiliate_code");
+                  if (error) {
+                    setAffiliateMsg("Error: " + error.message);
+                  } else {
+                    setAffiliateMsg("Saved!");
+                  }
+                  setAffiliateSaving(false);
+                }}
+              >
+                {affiliateSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
+                Save
+              </Button>
+            </div>
+            {affiliateMsg && (
+              <p className={`text-sm ${affiliateMsg.startsWith("Error") ? "text-destructive" : "text-primary"}`}>
+                {affiliateMsg}
+              </p>
             )}
           </CardContent>
         </Card>
