@@ -126,10 +126,10 @@ async function handleMessage(message: any) {
     if (existing.vote) {
       const affiliateText = await buildAffiliateText(ca);
       const resultText = `📊 <b>Info for this coin</b>\n\n` +
-        `CA: <code>${ca}</code>\n` +
-        `Result: <b>${POLL_OPTIONS[OPTION_VALUES.indexOf(existing.vote)]}</b>\n` +
+        `CA: <code>${ca}</code>\n\n` +
+        `Result: <b>${POLL_OPTIONS[OPTION_VALUES.indexOf(existing.vote)]}</b>\n\n` +
         `Voted by: @${existing.sender_username || "Unknown"}\n\n` +
-        `🔽 Buy via:\n${affiliateText}`;
+        `🔽 Buy via:\n\n${affiliateText}`;
       await sendMessage(chatId, resultText);
     } else {
       await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.`);
@@ -199,17 +199,17 @@ async function handlePollAnswer(pollAnswer: any) {
   const tokenData = await fetchTokenData(poll.contract_address);
 
   const marketInfo = tokenData
-    ? `\n🪙 <b>${tokenData.pairName}</b>\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}\n`
+    ? `\n\n🪙 <b>${tokenData.pairName}</b>\n\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}`
     : "";
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
   const affiliateText = await buildAffiliateText(poll.contract_address);
   const resultText = `📊 <b>Info about coin</b>\n\n` +
-    `CA: <code>${poll.contract_address}</code>\n` +
-    `Result: <b>${voteLabels}</b>\n` +
-    `Voted by: @${poll.sender_username || "Unknown"}\n` +
+    `CA: <code>${poll.contract_address}</code>\n\n` +
+    `Result: <b>${voteLabels}</b>\n\n` +
+    `Voted by: @${poll.sender_username || "Unknown"}` +
     marketInfo +
-    `\n🔽 Buy via:\n${affiliateText}`;
+    `\n\n🔽 Buy via:\n\n${affiliateText}`;
 
   await sendMessage(poll.chat_id, resultText);
 }
