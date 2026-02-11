@@ -1,0 +1,1 @@
+ALTER TABLE public.polls ADD COLUMN telegram_poll_id TEXT;

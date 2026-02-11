@@ -16,8 +16,8 @@ async function getAffiliateCode(): Promise<string> {
   return data?.value || DEFAULT_AFFILIATE_CODE;
 }
 
-const POLL_OPTIONS = ["🎰 Gamble", "📊 Volume", "👑 CTO", "❤️ I Love It"];
-const OPTION_VALUES = ["gamble", "volume", "cto", "i_love_it"];
+const POLL_OPTIONS = ["CTO", "Volume", "Good dev", "Gamble"];
+const OPTION_VALUES = ["cto", "volume", "good_dev", "gamble"];
 
 const AFFILIATE_BUTTONS = [
   [
@@ -56,13 +56,18 @@ async function buildAffiliateKeyboard(ca: string) {
   );
 }
 
-function buildPollKeyboard(ca: string) {
-  return [
-    POLL_OPTIONS.map((opt, i) => ({
-      text: opt,
-      callback_data: `vote:${OPTION_VALUES[i]}:${ca}`,
-    })),
-  ];
+async function sendPoll(chatId: number, ca: string, username: string): Promise<any> {
+  const res = await fetch(`${TELEGRAM_API}/sendPoll`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      question: "Info about coin",
+      options: POLL_OPTIONS.map(opt => ({ text: opt })),
+      is_anonymous: false,
+    }),
+  });
+  return res.json();
 }
 
 async function sendMessage(chatId: number, text: string, reply_markup?: any) {
@@ -136,24 +141,10 @@ async function handleMessage(message: any) {
     return;
   }
 
-  // Create new poll
-  const pollText = `📊 <b>Info for this coin</b>\n\nCA: <code>${ca}</code>\n\n⬇️ Only @${username} can vote:`;
-
-  const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: pollText,
-      parse_mode: "HTML",
-      reply_markup: JSON.stringify({
-        inline_keyboard: buildPollKeyboard(ca),
-      }),
-    }),
-  });
-
-  const sentMsg = await res.json();
+  // Create native Telegram poll
+  const sentMsg = await sendPoll(chatId, ca, username);
   const messageId = sentMsg.result?.message_id;
+  const pollId = sentMsg.result?.poll?.id;
 
   await supabase.from("polls").insert({
     chat_id: chatId,
@@ -161,44 +152,33 @@ async function handleMessage(message: any) {
     sender_user_id: userId,
     sender_username: username,
     message_id: messageId,
+    telegram_poll_id: pollId,
   });
 }
 
-async function handleCallbackQuery(callbackQuery: any) {
-  const data = callbackQuery.data;
-  if (!data?.startsWith("vote:")) return;
+async function handlePollAnswer(pollAnswer: any) {
+  const pollId = pollAnswer.poll_id;
+  const userId = pollAnswer.user?.id;
+  const optionIds = pollAnswer.option_ids;
 
-  const parts = data.split(":");
-  const vote = parts[1];
-  const ca = parts[2];
-  const userId = callbackQuery.from.id;
-  const chatId = callbackQuery.message.chat.id;
-  const messageId = callbackQuery.message.message_id;
+  if (!optionIds || optionIds.length === 0) return;
 
-  // Find the poll
+  const vote = OPTION_VALUES[optionIds[0]];
+
+  // Find the poll by telegram_poll_id
   const { data: poll } = await supabase
     .from("polls")
     .select("*")
-    .eq("chat_id", chatId)
-    .eq("contract_address", ca)
+    .eq("telegram_poll_id", pollId)
     .single();
 
-  if (!poll) {
-    await answerCallbackQuery(callbackQuery.id, "Poll not found.");
-    return;
-  }
+  if (!poll) return;
 
   // Only the sender can vote
-  if (poll.sender_user_id !== userId) {
-    await answerCallbackQuery(callbackQuery.id, "❌ Only the CA sender can vote!");
-    return;
-  }
+  if (poll.sender_user_id !== userId) return;
 
   // Already voted
-  if (poll.vote) {
-    await answerCallbackQuery(callbackQuery.id, "You already voted!");
-    return;
-  }
+  if (poll.vote) return;
 
   // Record the vote
   await supabase
@@ -206,18 +186,16 @@ async function handleCallbackQuery(callbackQuery: any) {
     .update({ vote, voted_at: new Date().toISOString() })
     .eq("id", poll.id);
 
-  // Update message with result + affiliate buttons
-  const resultText = `📊 <b>Info for this coin</b>\n\n` +
-    `CA: <code>${ca}</code>\n` +
-    `Result: <b>${POLL_OPTIONS[OPTION_VALUES.indexOf(vote)]}</b>\n` +
+  // Send affiliate buttons as a follow-up message
+  const resultText = `📊 <b>Info about coin</b>\n\n` +
+    `CA: <code>${poll.contract_address}</code>\n` +
+    `Result: <b>${POLL_OPTIONS[optionIds[0]]}</b>\n` +
     `Voted by: @${poll.sender_username || "Unknown"}\n\n` +
     `🔽 Buy via:`;
 
-  await editMessageText(chatId, messageId, resultText, {
-    inline_keyboard: await buildAffiliateKeyboard(ca),
+  await sendMessage(poll.chat_id, resultText, {
+    inline_keyboard: await buildAffiliateKeyboard(poll.contract_address),
   });
-
-  await answerCallbackQuery(callbackQuery.id, `✅ You voted: ${POLL_OPTIONS[OPTION_VALUES.indexOf(vote)]}`);
 }
 
 Deno.serve(async (req) => {
@@ -270,8 +248,8 @@ Deno.serve(async (req) => {
 
     if (update.message) {
       await handleMessage(update.message);
-    } else if (update.callback_query) {
-      await handleCallbackQuery(update.callback_query);
+    } else if (update.poll_answer) {
+      await handlePollAnswer(update.poll_answer);
     }
 
     return new Response(JSON.stringify({ ok: true }), {

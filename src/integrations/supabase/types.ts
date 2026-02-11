@@ -44,6 +44,7 @@ export type Database = {
           message_id: number | null
           sender_user_id: number
           sender_username: string | null
+          telegram_poll_id: string | null
           vote: string | null
           voted_at: string | null
         }
@@ -55,6 +56,7 @@ export type Database = {
           message_id?: number | null
           sender_user_id: number
           sender_username?: string | null
+          telegram_poll_id?: string | null
           vote?: string | null
           voted_at?: string | null
         }
@@ -66,6 +68,7 @@ export type Database = {
           message_id?: number | null
           sender_user_id?: number
           sender_username?: string | null
+          telegram_poll_id?: string | null
           vote?: string | null
           voted_at?: string | null
         }
