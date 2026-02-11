@@ -16,8 +16,8 @@ async function getAffiliateCode(): Promise<string> {
   return data?.value || DEFAULT_AFFILIATE_CODE;
 }
 
-const POLL_OPTIONS = ["CTO", "Volume", "Good dev", "Gamble"];
-const OPTION_VALUES = ["cto", "volume", "good_dev", "gamble"];
+const POLL_OPTIONS = ["CTO", "Volume", "Good dev", "Gamble", "Alpha"];
+const OPTION_VALUES = ["cto", "volume", "good_dev", "gamble", "alpha"];
 
 const AFFILIATE_BUTTONS = [
   [
