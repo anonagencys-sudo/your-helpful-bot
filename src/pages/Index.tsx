@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Bot, Zap, CheckCircle, AlertCircle, Loader2, ExternalLink, BarChart3, Users, Settings, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -76,6 +77,12 @@ const Index = () => {
             <span className="w-2 h-2 bg-primary rounded-full mr-2 animate-pulse" />
             Active
           </Badge>
+          <Link to="/dashboard">
+            <Button variant="outline" size="sm" className="border-primary/30 text-primary hover:bg-primary/10">
+              <BarChart3 className="w-4 h-4 mr-1" />
+              Analytics
+            </Button>
+          </Link>
         </div>
       </header>
 
