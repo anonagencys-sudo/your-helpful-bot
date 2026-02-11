@@ -240,22 +240,40 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
     const buys = pair.txns?.h1?.buys != null ? String(pair.txns.h1.buys) : "N/A";
     const sells = pair.txns?.h1?.sells != null ? String(pair.txns.h1.sells) : "N/A";
 
-    // Fetch ATH from CoinGecko (free, no key needed for low volume)
+    // Self-tracked ATH: compare current price to stored max
+    const currentPrice = pair.priceUsd ? Number(pair.priceUsd) : 0;
+    const coinName = pair.baseToken?.name || "Unknown";
     let athStr = "N/A";
-    try {
-      const cgRes = await fetch(`https://api.coingecko.com/api/v3/coins/solana/contract/${ca}`);
-      if (cgRes.ok) {
-        const cgData = await cgRes.json();
-        const athPrice = cgData?.market_data?.ath?.usd;
-        const athChangePct = cgData?.market_data?.ath_change_percentage?.usd;
-        if (athPrice != null) {
-          athStr = `$${formatNumber(Number(athPrice))}`;
-          if (athChangePct != null) {
-            athStr += ` (${athChangePct >= 0 ? "+" : ""}${Number(athChangePct).toFixed(0)}%)`;
-          }
+
+    if (currentPrice > 0) {
+      const { data: existing } = await supabase
+        .from("token_ath")
+        .select("max_price_usd")
+        .eq("contract_address", ca)
+        .single();
+
+      let maxPrice = existing?.max_price_usd ? Number(existing.max_price_usd) : 0;
+
+      if (currentPrice > maxPrice) {
+        maxPrice = currentPrice;
+        await supabase
+          .from("token_ath")
+          .upsert({
+            contract_address: ca,
+            max_price_usd: currentPrice,
+            coin_name: coinName,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "contract_address" });
+      }
+
+      if (maxPrice > 0) {
+        const athChangePct = ((currentPrice - maxPrice) / maxPrice) * 100;
+        athStr = `$${formatNumber(maxPrice)}`;
+        if (currentPrice < maxPrice) {
+          athStr += ` (${athChangePct.toFixed(0)}%)`;
         }
       }
-    } catch (_) { /* CoinGecko unavailable, keep N/A */ }
+    }
 
     return {
       priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
@@ -268,7 +286,7 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
       change1h,
       buys,
       sells,
-      pairName: pair.baseToken?.name || "Unknown",
+      pairName: coinName,
       imageUrl,
     };
   } catch (err) {
