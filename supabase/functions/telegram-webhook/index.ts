@@ -181,6 +181,13 @@ async function handleMessage(message: any) {
   });
 }
 
+function formatNumber(num: number): string {
+  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(2)}B`;
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
+  return num.toLocaleString();
+}
+
 async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24h: string; priceUsd: string; pairName: string; imageUrl: string | null }| null> {
   try {
     const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
@@ -195,8 +202,8 @@ async function fetchTokenData(ca: string): Promise<{ marketCap: string; volume24
     }
 
     return {
-      marketCap: pair.marketCap ? `$${Number(pair.marketCap).toLocaleString()}` : "N/A",
-      volume24h: pair.volume?.h24 ? `$${Number(pair.volume.h24).toLocaleString()}` : "N/A",
+      marketCap: pair.marketCap ? `$${formatNumber(Number(pair.marketCap))}` : "N/A",
+      volume24h: pair.volume?.h24 ? `$${formatNumber(Number(pair.volume.h24))}` : "N/A",
       priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
       pairName: pair.baseToken?.name || "Unknown",
       imageUrl,
