@@ -61,6 +61,7 @@ async function sendPoll(chatId: number, ca: string, username: string): Promise<a
       question: "Info about coin",
       options: POLL_OPTIONS.map(opt => ({ text: opt })),
       is_anonymous: false,
+      allows_multiple_answers: true,
     }),
   });
   return res.json();
@@ -176,7 +177,8 @@ async function handlePollAnswer(pollAnswer: any) {
 
   if (!optionIds || optionIds.length === 0) return;
 
-  const vote = OPTION_VALUES[optionIds[0]];
+  const votes = optionIds.map((i: number) => OPTION_VALUES[i]);
+  const voteStr = votes.join(",");
 
   const { data: poll } = await supabase
     .from("polls")
@@ -190,7 +192,7 @@ async function handlePollAnswer(pollAnswer: any) {
 
   await supabase
     .from("polls")
-    .update({ vote, voted_at: new Date().toISOString() })
+    .update({ vote: voteStr, voted_at: new Date().toISOString() })
     .eq("id", poll.id);
 
   // Fetch market data
@@ -200,10 +202,11 @@ async function handlePollAnswer(pollAnswer: any) {
     ? `\n🪙 <b>${tokenData.pairName}</b>\n💰 Price: ${tokenData.priceUsd}\n📊 Market Cap: ${tokenData.marketCap}\n📈 24h Volume: ${tokenData.volume24h}\n`
     : "";
 
+  const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
   const affiliateText = await buildAffiliateText(poll.contract_address);
   const resultText = `📊 <b>Info about coin</b>\n\n` +
     `CA: <code>${poll.contract_address}</code>\n` +
-    `Result: <b>${POLL_OPTIONS[optionIds[0]]}</b>\n` +
+    `Result: <b>${voteLabels}</b>\n` +
     `Voted by: @${poll.sender_username || "Unknown"}\n` +
     marketInfo +
     `\n🔽 Buy via:\n${affiliateText}`;
