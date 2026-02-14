@@ -53,17 +53,13 @@ async function buildAffiliateText(ca: string): Promise<string> {
   return lines.join("\n");
 }
 
-async function sendPoll(chatId: number, ca: string, username: string, mcStr?: string | null): Promise<any> {
-  let question = "Info about coin\n(you can select multiple options)";
-  if (mcStr) {
-    question += `\n\n🔥 First Call ${username} @ ${mcStr}`;
-  }
+async function sendPoll(chatId: number, ca: string, username: string): Promise<any> {
   const res = await fetch(`${TELEGRAM_API}/sendPoll`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      question,
+      question: "Info about coin\n(you can select multiple options)",
       options: POLL_OPTIONS.map(opt => ({ text: opt })),
       is_anonymous: false,
       allows_multiple_answers: true,
@@ -619,7 +615,7 @@ async function handleMessage(message: any) {
   const entryPrice = tokenData?.priceUsdRaw || 0;
   const entryMC = tokenData?.marketCap || null;
 
-  const sentMsg = await sendPoll(chatId, ca, username, entryMC);
+  const sentMsg = await sendPoll(chatId, ca, username);
   const messageId = sentMsg.result?.message_id;
   const pollId = sentMsg.result?.poll?.id;
 
@@ -633,6 +629,11 @@ async function handleMessage(message: any) {
     entry_price_usd: entryPrice > 0 ? entryPrice : null,
     peak_price_usd: entryPrice > 0 ? entryPrice : null,
   });
+
+  // Send "First Call" as separate message below the poll
+  if (entryMC) {
+    await sendMessage(chatId, `🔥 First Call @${username} @ ${entryMC}`);
+  }
 }
 
 async function handlePollAnswer(pollAnswer: any) {
