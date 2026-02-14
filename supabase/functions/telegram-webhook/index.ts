@@ -53,9 +53,9 @@ async function buildAffiliateText(ca: string): Promise<string> {
   return lines.join("\n");
 }
 
-function buildPollMessage(username: string, mcStr: string | null): string {
+function buildPollMessage(username: string, mcStr: string | null, selected: boolean[] = [false, false, false, false, false]): string {
   let msg = `📊 <b>Info about coin</b>\n(you can select multiple options)\n\n`;
-  msg += POLL_OPTIONS.map((opt, i) => `☐ ${opt}`).join("\n");
+  msg += POLL_OPTIONS.map((opt, i) => `${selected[i] ? "✅" : "☐"} ${opt}`).join("\n");
   if (mcStr) {
     msg += `\n\n😈 @${username} @ ${mcStr}`;
   }
@@ -920,16 +920,15 @@ async function handleCallbackQuery(cb: any) {
       selected[optIdx] = !selected[optIdx];
     }
 
+    // Extract username and mcStr from existing message text
+    const msgText = cb.message?.text || "";
+    const callerMatch = msgText.match(/😈 @(\S+) @ (\S+)/);
+    const callerUsername = callerMatch?.[1] || "";
+    const callerMC = callerMatch?.[2] || null;
+
+    const newText = buildPollMessage(callerUsername, callerMC, selected);
     const markup = buildPollMarkup(ca, selected);
-    await fetch(`${TELEGRAM_API}/editMessageReplyMarkup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        message_id: messageId,
-        reply_markup: JSON.stringify(markup),
-      }),
-    });
+    await editMessageText(chatId, messageId, newText, markup);
     await answerCallbackQuery(cb.id);
     return;
   }
