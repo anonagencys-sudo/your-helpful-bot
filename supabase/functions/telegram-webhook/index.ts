@@ -70,8 +70,8 @@ async function sendPoll(chatId: number, ca: string): Promise<any> {
   return res.json();
 }
 
-async function sendMessage(chatId: number, text: string, reply_markup?: any) {
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
+async function sendMessage(chatId: number, text: string, reply_markup?: any): Promise<any> {
+  const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -82,6 +82,7 @@ async function sendMessage(chatId: number, text: string, reply_markup?: any) {
       reply_markup: reply_markup ? JSON.stringify(reply_markup) : undefined,
     }),
   });
+  return res.json();
 }
 
 async function sendPhoto(chatId: number, photoUrl: string, caption: string, reply_markup?: any) {
@@ -863,6 +864,8 @@ async function handlePollAnswer(pollAnswer: any) {
 
   if (poll.message_id) {
     await deleteMessage(poll.chat_id, poll.message_id);
+    // Also delete the first call message (sent right after the poll)
+    await deleteMessage(poll.chat_id, poll.message_id + 1);
   }
 
   const [tokenData, affiliateText, firstCaller] = await Promise.all([
