@@ -7,6 +7,8 @@ const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const DEFAULT_AFFILIATE_CODE = "CtkNfJ51yMih3CYwEP1F41sUmBbdLoUHmkXkW6PPpump";
 
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
 async function getAffiliateCode(): Promise<string> {
   const { data } = await supabase
     .from("bot_settings")
@@ -37,9 +39,8 @@ const AFFILIATE_BUTTONS = [
   ],
 ];
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// ─── Telegram helpers ───
 
-// Detect Solana CA: base58, 32-44 chars
 function extractSolanaCA(text: string): string | null {
   const match = text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
   return match ? match[0] : null;
@@ -95,17 +96,11 @@ async function sendPhoto(chatId: number, photoUrl: string, caption: string, repl
   });
 }
 
-async function editMessageText(chatId: number, messageId: number, text: string, reply_markup?: any) {
-  await fetch(`${TELEGRAM_API}/editMessageText`, {
+async function deleteMessage(chatId: number, messageId: number) {
+  await fetch(`${TELEGRAM_API}/deleteMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      message_id: messageId,
-      text,
-      parse_mode: "HTML",
-      reply_markup: reply_markup ? JSON.stringify(reply_markup) : undefined,
-    }),
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
   });
 }
 
@@ -117,89 +112,11 @@ async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   });
 }
 
-async function deleteMessage(chatId: number, messageId: number) {
-  await fetch(`${TELEGRAM_API}/deleteMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
-  });
-}
-
 const DELETE_BUTTON_MARKUP = {
   inline_keyboard: [[{ text: "🗑️", callback_data: "delete_msg" }]],
 };
 
-async function handleMessage(message: any) {
-  const text = message.text;
-  if (!text) return;
-
-  const chatId = message.chat.id;
-  const userId = message.from.id;
-  const username = message.from.username || message.from.first_name || "Unknown";
-
-  const ca = extractSolanaCA(text);
-  if (!ca) return;
-
-  // Check if poll already exists for this CA in this chat
-  const { data: existing } = await supabase
-    .from("polls")
-    .select("*")
-    .eq("chat_id", chatId)
-    .eq("contract_address", ca)
-    .single();
-
-  if (existing) {
-    // Show previous result
-    if (existing.vote) {
-      const tokenData = await fetchTokenData(ca);
-      const affiliateText = await buildAffiliateText(ca);
-      const coinName = tokenData?.pairName || "Unknown";
-      const voteLabels = existing.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
-
-      const marketInfo = tokenData
-        ? `\n\n📊 <b>Stats</b>\n` +
-          `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n` +
-          `├ MC      ${tokenData.marketCap}\n` +
-          `├ Vol     ${tokenData.volume24h}\n` +
-          `├ LP      ${tokenData.liquidity}\n` +
-          `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
-          `└ FDV     ${tokenData.fdv}`
-        : "";
-
-      const resultText = `📊 <b>Information about this coin</b>\n\n` +
-        `🪙 <b>${coinName}</b>\n\n` +
-        `CA: <code>${ca}</code>\n\n` +
-        `Information: <b>${voteLabels}</b>\n\n` +
-        `Voted by: @${existing.sender_username || "Unknown"}` +
-        marketInfo +
-        `\n\n🔽 Buy via:\n\n${affiliateText}`;
-
-      if (tokenData?.imageUrl) {
-        await sendPhoto(chatId, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
-      } else {
-        await sendMessage(chatId, resultText, DELETE_BUTTON_MARKUP);
-      }
-    } else {
-      const pollLink = existing.message_id ? `\n\n👉 <a href="https://t.me/c/${String(chatId).replace('-100', '')}/${existing.message_id}">Jump to poll</a>` : "";
-      await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.${pollLink}`);
-    }
-    return;
-  }
-
-  // Create native Telegram poll
-  const sentMsg = await sendPoll(chatId, ca, username);
-  const messageId = sentMsg.result?.message_id;
-  const pollId = sentMsg.result?.poll?.id;
-
-  await supabase.from("polls").insert({
-    chat_id: chatId,
-    contract_address: ca,
-    sender_user_id: userId,
-    sender_username: username,
-    message_id: messageId,
-    telegram_poll_id: pollId,
-  });
-}
+// ─── Formatting ───
 
 function formatNumber(num: number): string {
   if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(2)}B`;
@@ -207,6 +124,8 @@ function formatNumber(num: number): string {
   if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
   return num.toLocaleString();
 }
+
+// ─── Token Data ───
 
 interface TokenData {
   priceUsd: string;
@@ -221,6 +140,12 @@ interface TokenData {
   ath: string;
   pairName: string;
   imageUrl: string | null;
+  // Socials
+  twitterUrl: string | null;
+  websiteUrl: string | null;
+  telegramUrl: string | null;
+  // Security / Boost
+  dexPaid: boolean;
 }
 
 async function fetchTokenData(ca: string): Promise<TokenData | null> {
@@ -240,7 +165,7 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
     const buys = pair.txns?.h1?.buys != null ? String(pair.txns.h1.buys) : "N/A";
     const sells = pair.txns?.h1?.sells != null ? String(pair.txns.h1.sells) : "N/A";
 
-    // Self-tracked ATH: compare current price to stored max
+    // Self-tracked ATH
     const currentPrice = pair.priceUsd ? Number(pair.priceUsd) : 0;
     const coinName = pair.baseToken?.name || "Unknown";
     let athStr = "N/A";
@@ -275,6 +200,23 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
       }
     }
 
+    // Extract socials from DexScreener
+    const socials = pair.info?.socials || [];
+    let twitterUrl: string | null = null;
+    let websiteUrl: string | null = null;
+    let telegramUrl: string | null = null;
+
+    for (const s of socials) {
+      if (s.type === "twitter" || s.platform === "twitter") twitterUrl = s.url;
+      if (s.type === "telegram" || s.platform === "telegram") telegramUrl = s.url;
+    }
+    if (pair.info?.websites?.length) {
+      websiteUrl = pair.info.websites[0]?.url || null;
+    }
+
+    // DEX Paid / Boost detection
+    const dexPaid = !!(pair.boosts?.active || pair.labels?.includes("boost"));
+
     return {
       priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
       priceChange: priceChange24h,
@@ -288,11 +230,125 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
       sells,
       pairName: coinName,
       imageUrl,
+      twitterUrl,
+      websiteUrl,
+      telegramUrl,
+      dexPaid,
     };
   } catch (err) {
     console.error("DexScreener fetch error:", err);
     return null;
   }
+}
+
+// ─── Build result message ───
+
+function buildResultMessage(
+  ca: string,
+  voteLabels: string,
+  senderUsername: string,
+  tokenData: TokenData | null,
+  affiliateText: string,
+): string {
+  const coinName = tokenData?.pairName || "Unknown";
+
+  // Header
+  let msg = `📊 <b>Information about coin</b>\n\n`;
+  msg += `🪙 <b>${coinName}</b>\n\n`;
+  msg += `CA: <code>${ca}</code>\n\n`;
+  msg += `Information: <b>${voteLabels}</b>\n`;
+  msg += `Voted by: @${senderUsername}`;
+
+  // Socials section
+  if (tokenData) {
+    const socialLinks: string[] = [];
+    if (tokenData.twitterUrl) socialLinks.push(`<a href="${tokenData.twitterUrl}">𝕏</a>`);
+    if (tokenData.websiteUrl) socialLinks.push(`<a href="${tokenData.websiteUrl}">🌐 Web</a>`);
+    if (tokenData.telegramUrl) socialLinks.push(`<a href="${tokenData.telegramUrl}">📱 TG</a>`);
+
+    if (socialLinks.length > 0) {
+      msg += `\n\n🔗 <b>Socials</b>\n`;
+      msg += socialLinks.join(" • ");
+    }
+  }
+
+  // Stats section
+  if (tokenData) {
+    msg += `\n\n📊 <b>Stats</b>\n`;
+    msg += `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n`;
+    msg += `├ MC      ${tokenData.marketCap}\n`;
+    msg += `├ Vol     ${tokenData.volume24h}\n`;
+    msg += `├ LP      ${tokenData.liquidity}\n`;
+    msg += `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n`;
+    msg += `├ FDV     ${tokenData.fdv}\n`;
+    msg += `└ ATH     ${tokenData.ath}`;
+  }
+
+  // Security section
+  if (tokenData) {
+    msg += `\n\n🛡 <b>Security</b>\n`;
+    msg += `└ DEX Paid  ${tokenData.dexPaid ? "✅ Yes" : "❌ No"}`;
+  }
+
+  // Affiliate links
+  msg += `\n\n🔽 Buy via:\n\n${affiliateText}`;
+
+  return msg;
+}
+
+// ─── Handlers ───
+
+async function handleMessage(message: any) {
+  const text = message.text;
+  if (!text) return;
+
+  const chatId = message.chat.id;
+  const userId = message.from.id;
+  const username = message.from.username || message.from.first_name || "Unknown";
+
+  const ca = extractSolanaCA(text);
+  if (!ca) return;
+
+  const { data: existing } = await supabase
+    .from("polls")
+    .select("*")
+    .eq("chat_id", chatId)
+    .eq("contract_address", ca)
+    .single();
+
+  if (existing) {
+    if (existing.vote) {
+      const [tokenData, affiliateText] = await Promise.all([
+        fetchTokenData(ca),
+        buildAffiliateText(ca),
+      ]);
+      const voteLabels = existing.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
+      const resultText = buildResultMessage(ca, voteLabels, existing.sender_username || "Unknown", tokenData, affiliateText);
+
+      if (tokenData?.imageUrl) {
+        await sendPhoto(chatId, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
+      } else {
+        await sendMessage(chatId, resultText, DELETE_BUTTON_MARKUP);
+      }
+    } else {
+      const pollLink = existing.message_id ? `\n\n👉 <a href="https://t.me/c/${String(chatId).replace('-100', '')}/${existing.message_id}">Jump to poll</a>` : "";
+      await sendMessage(chatId, `⏳ Poll for this CA is still open. Waiting for @${existing.sender_username || "Unknown"} to vote.${pollLink}`);
+    }
+    return;
+  }
+
+  const sentMsg = await sendPoll(chatId, ca, username);
+  const messageId = sentMsg.result?.message_id;
+  const pollId = sentMsg.result?.poll?.id;
+
+  await supabase.from("polls").insert({
+    chat_id: chatId,
+    contract_address: ca,
+    sender_user_id: userId,
+    sender_username: username,
+    message_id: messageId,
+    telegram_poll_id: pollId,
+  });
 }
 
 async function handlePollAnswer(pollAnswer: any) {
@@ -325,38 +381,17 @@ async function handlePollAnswer(pollAnswer: any) {
     .update({ vote: voteStr, voted_at: new Date().toISOString() })
     .eq("id", poll.id);
 
-  // Delete the poll message
   if (poll.message_id) {
-    await fetch(`${TELEGRAM_API}/deleteMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: poll.chat_id, message_id: poll.message_id }),
-    });
+    await deleteMessage(poll.chat_id, poll.message_id);
   }
 
-  // Fetch market data
-  const tokenData = await fetchTokenData(poll.contract_address);
-
-  const coinName = tokenData?.pairName || "Unknown";
-  const marketInfo = tokenData
-    ? `\n\n📊 <b>Stats</b>\n` +
-      `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n` +
-      `├ MC      ${tokenData.marketCap}\n` +
-      `├ Vol     ${tokenData.volume24h}\n` +
-      `├ LP      ${tokenData.liquidity}\n` +
-      `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
-      `└ FDV     ${tokenData.fdv}`
-    : "";
+  const [tokenData, affiliateText] = await Promise.all([
+    fetchTokenData(poll.contract_address),
+    buildAffiliateText(poll.contract_address),
+  ]);
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
-  const affiliateText = await buildAffiliateText(poll.contract_address);
-  const resultText = `📊 <b>Information about coin</b>\n\n` +
-    `🪙 <b>${coinName}</b>\n\n` +
-    `CA: <code>${poll.contract_address}</code>\n\n` +
-    `Information: <b>${voteLabels}</b>\n\n` +
-    `Voted by: @${poll.sender_username || "Unknown"}` +
-    marketInfo +
-    `\n\n🔽 Buy via:\n\n${affiliateText}`;
+  const resultText = buildResultMessage(poll.contract_address, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText);
 
   if (tokenData?.imageUrl) {
     await sendPhoto(poll.chat_id, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
@@ -364,6 +399,8 @@ async function handlePollAnswer(pollAnswer: any) {
     await sendMessage(poll.chat_id, resultText, DELETE_BUTTON_MARKUP);
   }
 }
+
+// ─── HTTP Server ───
 
 Deno.serve(async (req) => {
   const corsHeaders = {
@@ -377,7 +414,6 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
 
-  // GET /telegram-webhook?action=register — register webhook with Telegram
   if (req.method === "GET" && url.searchParams.get("action") === "register") {
     try {
       const webhookUrl = `${SUPABASE_URL}/functions/v1/telegram-webhook`;
@@ -393,7 +429,6 @@ Deno.serve(async (req) => {
     }
   }
 
-  // GET /telegram-webhook?action=status — get webhook info
   if (req.method === "GET" && url.searchParams.get("action") === "status") {
     try {
       const res = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
