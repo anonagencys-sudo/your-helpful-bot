@@ -613,6 +613,130 @@ async function handleLeaderboard(chatId: number, period: string = "1d", voteFilt
   await sendMessage(chatId, text, markup);
 }
 
+// ─── Card Command ───
+
+function formatPerformance(entryPrice: number, currentPrice: number): string {
+  if (entryPrice <= 0) return "N/A";
+  const changePct = ((currentPrice - entryPrice) / entryPrice) * 100;
+  if (changePct >= 100) {
+    const multiplier = currentPrice / entryPrice;
+    return `${multiplier.toFixed(1)}x 🚀`;
+  } else if (changePct >= 0) {
+    return `+${changePct.toFixed(1)}% 📈`;
+  } else {
+    return `${changePct.toFixed(1)}% 📉`;
+  }
+}
+
+function getPerformanceBar(entryPrice: number, currentPrice: number): string {
+  if (entryPrice <= 0) return "░░░░░░░░░░";
+  const ratio = currentPrice / entryPrice;
+  const filled = Math.min(Math.max(Math.round(ratio * 5), 0), 10);
+  return "▓".repeat(filled) + "░".repeat(10 - filled);
+}
+
+async function handleCardCommand(chatId: number, ca: string) {
+  // Get the poll for this CA in this chat
+  const { data: poll } = await supabase
+    .from("polls")
+    .select("*")
+    .eq("chat_id", chatId)
+    .eq("contract_address", ca)
+    .single();
+
+  if (!poll) {
+    await sendMessage(chatId, "❌ No call found for this CA in this group.");
+    return;
+  }
+
+  const tokenData = await fetchTokenData(ca);
+  if (!tokenData) {
+    await sendMessage(chatId, "❌ Could not fetch token data.");
+    return;
+  }
+
+  const entryPrice = poll.entry_price_usd ? Number(poll.entry_price_usd) : 0;
+  const currentPrice = tokenData.priceUsdRaw || 0;
+  const peakPrice = poll.peak_price_usd ? Number(poll.peak_price_usd) : currentPrice;
+
+  // Update peak if current is higher
+  if (currentPrice > peakPrice) {
+    await supabase
+      .from("polls")
+      .update({ peak_price_usd: currentPrice })
+      .eq("id", poll.id);
+  }
+
+  const actualPeak = Math.max(peakPrice, currentPrice);
+
+  const performance = formatPerformance(entryPrice, currentPrice);
+  const peakPerformance = formatPerformance(entryPrice, actualPeak);
+  const bar = getPerformanceBar(entryPrice, currentPrice);
+
+  const voteLabels = poll.vote
+    ? poll.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ")
+    : "Pending";
+
+  // Calculate time since call
+  const createdAt = new Date(poll.created_at).getTime();
+  const diffMs = Date.now() - createdAt;
+  const diffMin = Math.floor(diffMs / 60000);
+  let timeAgo: string;
+  if (diffMin < 1) timeAgo = "just now";
+  else if (diffMin < 60) timeAgo = `${diffMin}m ago`;
+  else if (diffMin < 1440) timeAgo = `${Math.floor(diffMin / 60)}h ago`;
+  else timeAgo = `${Math.floor(diffMin / 1440)}d ago`;
+
+  // Entry MC calculation
+  let entryMC = "N/A";
+  let currentMC = tokenData.marketCap;
+  if (entryPrice > 0 && currentPrice > 0) {
+    const mcNum = tokenData.marketCap ? Number(tokenData.marketCap.replace(/[$,]/g, "")) : 0;
+    if (mcNum > 0) {
+      const ratio = mcNum / currentPrice;
+      entryMC = `$${formatNumber(entryPrice * ratio)}`;
+    }
+  }
+
+  let card = `╔══════════════════════╗\n`;
+  card += `║  🃏 <b>CALL CARD</b>\n`;
+  card += `╠══════════════════════╣\n`;
+  card += `║\n`;
+  card += `║  🪙 <b>${tokenData.pairName}</b>\n`;
+  card += `║  <code>${ca}</code>\n`;
+  card += `║\n`;
+  card += `║  📊 <b>Performance</b>\n`;
+  card += `║  ${bar}\n`;
+  card += `║  Current: <b>${performance}</b>\n`;
+  card += `║  Peak:    <b>${peakPerformance}</b>\n`;
+  card += `║\n`;
+  card += `║  💰 <b>Price</b>\n`;
+  card += `║  ├ Entry    $${entryPrice > 0 ? entryPrice.toFixed(8) : "N/A"}\n`;
+  card += `║  ├ Current  ${tokenData.priceUsd}\n`;
+  card += `║  └ MC       ${currentMC}\n`;
+  card += `║\n`;
+  card += `║  📋 <b>Call Info</b>\n`;
+  card += `║  ├ Caller   @${poll.sender_username || "Unknown"}\n`;
+  card += `║  ├ Called    ${timeAgo}\n`;
+  card += `║  ├ Entry MC  ${entryMC}\n`;
+  card += `║  └ Vote     ${voteLabels}\n`;
+  card += `║\n`;
+  card += `╚══════════════════════╝`;
+
+  const markup = {
+    inline_keyboard: [[
+      { text: "🗑️", callback_data: "delete_msg" },
+      { text: "🔄", callback_data: `card_${ca}` },
+    ]],
+  };
+
+  if (tokenData.imageUrl) {
+    await sendPhoto(chatId, tokenData.imageUrl, card, markup);
+  } else {
+    await sendMessage(chatId, card, markup);
+  }
+}
+
 // ─── Handlers ───
 
 async function handleMessage(message: any) {
@@ -623,10 +747,23 @@ async function handleMessage(message: any) {
   const userId = message.from.id;
   const username = message.from.username || message.from.first_name || "Unknown";
 
-  // Handle leaderboard commands: /lb, /ga, /ct, /vo, /gd, /al
+  // Handle commands
   const cmdMatch = text.trim().match(/^\/(\w+)/);
   if (cmdMatch) {
     const cmd = `/${cmdMatch[1].toLowerCase()}`;
+    
+    // Handle /card command
+    if (cmd === "/card") {
+      const ca = extractSolanaCA(text);
+      if (!ca) {
+        await sendMessage(chatId, "⚠️ Usage: /card <contract_address>");
+        return;
+      }
+      await handleCardCommand(chatId, ca);
+      return;
+    }
+
+    // Handle leaderboard commands: /lb, /ga, /ct, /vo, /gd, /al
     const lbConfig = LEADERBOARD_COMMANDS[cmd];
     if (lbConfig) {
       await handleLeaderboard(chatId, "1d", lbConfig.filter || "");
@@ -857,6 +994,14 @@ async function handleCallbackQuery(cb: any) {
     }
 
     await answerCallbackQuery(cb.id, "Vote confirmed ✅");
+    return;
+  }
+
+  // Card refresh: card_{ca}
+  if (data?.startsWith("card_")) {
+    const ca = data.replace("card_", "");
+    await handleCardCommand(chatId, ca);
+    await answerCallbackQuery(cb.id, "Refreshed ✅");
     return;
   }
 
