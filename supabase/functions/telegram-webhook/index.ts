@@ -53,17 +53,62 @@ async function buildAffiliateText(ca: string): Promise<string> {
   return lines.join("\n");
 }
 
-async function sendPoll(chatId: number, ca: string): Promise<any> {
-  const question = "Info about coin\n(you can select multiple options)";
-  const res = await fetch(`${TELEGRAM_API}/sendPoll`, {
+function buildPollMessage(username: string, mcStr: string | null): string {
+  let msg = `📊 <b>Info about coin</b>\n(you can select multiple options)\n\n`;
+  msg += POLL_OPTIONS.map((opt, i) => `☐ ${opt}`).join("\n");
+  if (mcStr) {
+    msg += `\n\n😈 @${username} @ ${mcStr}`;
+  }
+  return msg;
+}
+
+function buildPollMarkup(ca: string, selected: boolean[] = [false, false, false, false, false]) {
+  return {
+    inline_keyboard: [
+      [
+        { text: selected[0] ? "✅ CTO" : "CTO", callback_data: `pv_0_${ca}` },
+        { text: selected[1] ? "✅ Volume" : "Volume", callback_data: `pv_1_${ca}` },
+        { text: selected[2] ? "✅ Good dev" : "Good dev", callback_data: `pv_2_${ca}` },
+      ],
+      [
+        { text: selected[3] ? "✅ Gamble" : "Gamble", callback_data: `pv_3_${ca}` },
+        { text: selected[4] ? "✅ Alpha" : "Alpha", callback_data: `pv_4_${ca}` },
+      ],
+      [
+        { text: "✅ Confirm Vote", callback_data: `pc_${ca}` },
+      ],
+    ],
+  };
+}
+
+function parseSelectedFromMarkup(replyMarkup: any): boolean[] {
+  const selected = [false, false, false, false, false];
+  if (!replyMarkup?.inline_keyboard) return selected;
+  for (const row of replyMarkup.inline_keyboard) {
+    for (const btn of row) {
+      if (btn.callback_data?.startsWith("pv_")) {
+        const idx = parseInt(btn.callback_data.split("_")[1]);
+        if (idx >= 0 && idx < 5) {
+          selected[idx] = btn.text.startsWith("✅");
+        }
+      }
+    }
+  }
+  return selected;
+}
+
+async function sendCustomPoll(chatId: number, ca: string, username: string, mcStr: string | null): Promise<any> {
+  const text = buildPollMessage(username, mcStr);
+  const markup = buildPollMarkup(ca);
+  const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      question,
-      options: POLL_OPTIONS.map(opt => ({ text: opt })),
-      is_anonymous: false,
-      allows_multiple_answers: true,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: JSON.stringify(markup),
     }),
   });
   return res.json();
@@ -627,14 +672,8 @@ async function handleMessage(message: any) {
   const entryPrice = tokenData?.priceUsdRaw || 0;
   const entryMC = tokenData?.marketCap || null;
 
-  const sentMsg = await sendPoll(chatId, ca);
+  const sentMsg = await sendCustomPoll(chatId, ca, username, entryMC);
   const messageId = sentMsg.result?.message_id;
-  const pollId = sentMsg.result?.poll?.id;
-
-  // Send first call info as a reply below the poll
-  if (entryMC && messageId) {
-    await sendMessage(chatId, `😈 @${username} @ ${entryMC}`);
-  }
 
   await supabase.from("polls").insert({
     chat_id: chatId,
@@ -642,7 +681,7 @@ async function handleMessage(message: any) {
     sender_user_id: userId,
     sender_username: username,
     message_id: messageId,
-    telegram_poll_id: pollId,
+    telegram_poll_id: null,
     entry_price_usd: entryPrice > 0 ? entryPrice : null,
     peak_price_usd: entryPrice > 0 ? entryPrice : null,
   });
@@ -712,10 +751,118 @@ async function handleCallbackQuery(cb: any) {
     return;
   }
 
+  // Poll vote toggle: pv_{optionIndex}_{ca}
+  if (data?.startsWith("pv_")) {
+    const parts = data.split("_");
+    const optIdx = parseInt(parts[1]);
+    const ca = parts.slice(2).join("_");
+
+    // Check if the voter is the poll sender
+    const { data: poll } = await supabase
+      .from("polls")
+      .select("sender_user_id")
+      .eq("chat_id", chatId)
+      .eq("contract_address", ca)
+      .is("vote", null)
+      .single();
+
+    if (!poll) {
+      await answerCallbackQuery(cb.id, "Poll not found");
+      return;
+    }
+
+    const voterId = cb.from?.id;
+    if (poll.sender_user_id !== voterId) {
+      await answerCallbackQuery(cb.id, "⛔ Only the caller can vote");
+      return;
+    }
+
+    // Toggle the selected option by reading current button state
+    const selected = parseSelectedFromMarkup(cb.message?.reply_markup);
+    if (optIdx >= 0 && optIdx < 5) {
+      selected[optIdx] = !selected[optIdx];
+    }
+
+    const markup = buildPollMarkup(ca, selected);
+    await fetch(`${TELEGRAM_API}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: JSON.stringify(markup),
+      }),
+    });
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+
+  // Poll confirm: pc_{ca}
+  if (data?.startsWith("pc_")) {
+    const ca = data.replace("pc_", "");
+
+    const { data: poll } = await supabase
+      .from("polls")
+      .select("*")
+      .eq("chat_id", chatId)
+      .eq("contract_address", ca)
+      .is("vote", null)
+      .single();
+
+    if (!poll) {
+      await answerCallbackQuery(cb.id, "Poll not found");
+      return;
+    }
+
+    const voterId = cb.from?.id;
+    if (poll.sender_user_id !== voterId) {
+      await answerCallbackQuery(cb.id, "⛔ Only the caller can vote");
+      return;
+    }
+
+    // Get selected options from buttons
+    const selected = parseSelectedFromMarkup(cb.message?.reply_markup);
+    const selectedIndices = selected.map((s, i) => s ? i : -1).filter(i => i >= 0);
+
+    if (selectedIndices.length === 0) {
+      await answerCallbackQuery(cb.id, "Select at least one option");
+      return;
+    }
+
+    const votes = selectedIndices.map(i => OPTION_VALUES[i]);
+    const voteStr = votes.join(",");
+
+    await supabase
+      .from("polls")
+      .update({ vote: voteStr, voted_at: new Date().toISOString() })
+      .eq("id", poll.id);
+
+    // Delete the poll message
+    await deleteMessage(chatId, messageId);
+
+    const [tokenData, affiliateText, firstCaller] = await Promise.all([
+      fetchTokenData(ca),
+      buildAffiliateText(ca),
+      getFirstCaller(ca),
+    ]);
+
+    const voteLabels = selectedIndices.map(i => POLL_OPTIONS[i]).join(", ");
+    const resultText = buildResultMessage(ca, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText, firstCaller);
+    const markup = getResultMarkup(ca);
+
+    if (tokenData?.imageUrl) {
+      await sendPhoto(chatId, tokenData.imageUrl, resultText, markup);
+    } else {
+      await sendMessage(chatId, resultText, markup);
+    }
+
+    await answerCallbackQuery(cb.id, "Vote confirmed ✅");
+    return;
+  }
+
   // Refresh button: refresh_{ca}
   if (data?.startsWith("refresh_")) {
     const ca = data.replace("refresh_", "");
-    // Find the poll for this CA in this chat
     const { data: poll } = await supabase
       .from("polls")
       .select("*")
@@ -734,7 +881,6 @@ async function handleCallbackQuery(cb: any) {
       const resultText = buildResultMessage(ca, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText, firstCaller);
       const markup = getResultMarkup(ca);
 
-      // For photo messages we need to edit caption, for text we edit text
       if (cb.message?.photo) {
         await fetch(`${TELEGRAM_API}/editMessageCaption`, {
           method: "POST",
@@ -761,7 +907,6 @@ async function handleCallbackQuery(cb: any) {
     let period = parts;
     let voteFilter = "";
 
-    // Check if there's a filter prefix (e.g. "gamble_1d")
     const lastUnderscore = parts.lastIndexOf("_");
     if (lastUnderscore > 0) {
       const possiblePeriod = parts.slice(lastUnderscore + 1);
@@ -832,6 +977,7 @@ Deno.serve(async (req) => {
     if (update.message) {
       await handleMessage(update.message);
     } else if (update.poll_answer) {
+      // Legacy: keep for backward compat with any existing native polls
       await handlePollAnswer(update.poll_answer);
     } else if (update.callback_query) {
       await handleCallbackQuery(update.callback_query);
