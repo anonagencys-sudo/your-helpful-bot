@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const DEFAULT_AFFILIATE_CODE = "CtkNfJ51yMih3CYwEP1F41sUmBbdLoUHmkXkW6PPpump";
@@ -591,7 +592,6 @@ function getPerformanceBar(entryPrice: number, currentPrice: number): string {
 }
 
 async function handleCardCommand(chatId: number, ca: string) {
-  // Get the poll for this CA in this chat
   const { data: poll } = await supabase
     .from("polls")
     .select("*")
@@ -614,85 +614,131 @@ async function handleCardCommand(chatId: number, ca: string) {
   const currentPrice = tokenData.priceUsdRaw || 0;
   const peakPrice = poll.peak_price_usd ? Number(poll.peak_price_usd) : currentPrice;
 
-  // Update peak if current is higher
   if (currentPrice > peakPrice) {
-    await supabase
-      .from("polls")
-      .update({ peak_price_usd: currentPrice })
-      .eq("id", poll.id);
+    await supabase.from("polls").update({ peak_price_usd: currentPrice }).eq("id", poll.id);
   }
 
   const actualPeak = Math.max(peakPrice, currentPrice);
+  const callerUsername = poll.sender_username || "Unknown";
+  const coinName = tokenData.pairName || "Unknown";
 
-  const performance = formatPerformance(entryPrice, currentPrice);
-  const peakPerformance = formatPerformance(entryPrice, actualPeak);
-  const bar = getPerformanceBar(entryPrice, currentPrice);
+  // Calculate performance string (clean, no emoji)
+  let perfStr = "N/A";
+  if (entryPrice > 0 && currentPrice > 0) {
+    const changePct = ((currentPrice - entryPrice) / entryPrice) * 100;
+    if (changePct >= 100) {
+      const multiplier = currentPrice / entryPrice;
+      perfStr = `${multiplier.toFixed(1)}x`;
+    } else if (changePct >= 0) {
+      perfStr = `+${changePct.toFixed(1)}%`;
+    } else {
+      perfStr = `${changePct.toFixed(1)}%`;
+    }
+  }
 
-  const voteLabels = poll.vote
-    ? poll.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ")
-    : "Pending";
+  // Calculate entry MC
+  let entryMCStr = "N/A";
+  if (entryPrice > 0 && currentPrice > 0 && tokenData.marketCap) {
+    const mcNum = Number(tokenData.marketCap.replace(/[$,]/g, ""));
+    if (mcNum > 0) {
+      const ratio = mcNum / currentPrice;
+      entryMCStr = formatNumber(entryPrice * ratio);
+    }
+  }
 
   // Calculate time since call
   const createdAt = new Date(poll.created_at).getTime();
   const diffMs = Date.now() - createdAt;
   const diffMin = Math.floor(diffMs / 60000);
-  let timeAgo: string;
-  if (diffMin < 1) timeAgo = "just now";
-  else if (diffMin < 60) timeAgo = `${diffMin}m ago`;
-  else if (diffMin < 1440) timeAgo = `${Math.floor(diffMin / 60)}h ago`;
-  else timeAgo = `${Math.floor(diffMin / 1440)}d ago`;
+  const diffH = Math.floor(diffMin / 60);
+  const diffD = Math.floor(diffH / 24);
+  let timeStr: string;
+  if (diffD > 0) timeStr = `${diffD}d, ${diffH % 24}h`;
+  else if (diffH > 0) timeStr = `${diffH}h, ${diffMin % 60}m`;
+  else timeStr = `${diffMin}m`;
 
-  // Entry MC calculation
-  let entryMC = "N/A";
-  let currentMC = tokenData.marketCap;
-  if (entryPrice > 0 && currentPrice > 0) {
-    const mcNum = tokenData.marketCap ? Number(tokenData.marketCap.replace(/[$,]/g, "")) : 0;
-    if (mcNum > 0) {
-      const ratio = mcNum / currentPrice;
-      entryMC = `$${formatNumber(entryPrice * ratio)}`;
+  // Determine color based on performance
+  const isPositive = entryPrice > 0 && currentPrice >= entryPrice;
+
+  // Get token image URL for the AI to include
+  const tokenImgUrl = tokenData.imageUrl || "";
+
+  // Generate card image using AI
+  const prompt = `Create a crypto trading call card image with a dark background (dark green/black gradient). The card should have:
+- Top center: a small square token icon placeholder
+- Right side large bold text: "${coinName}" in white
+- Below that: "called at ${entryMCStr}" in gray/white text
+- Center/right: HUGE bold text "${perfStr}" in ${isPositive ? "bright neon green" : "red"} color, this should be the most prominent element
+- Below: "👤 ${callerUsername.toUpperCase()}" in white bold
+- Below that: "⏱ ${timeStr}" in gray
+- Bottom bar: "@pollaris_test" branding in small text
+- The Solana logo icon in top right corner
+- Overall style: dark, professional crypto trading card with rounded corners and subtle glow effects
+- Aspect ratio: 16:9 landscape
+- Do NOT include any real character or meme images, keep it abstract/geometric`;
+
+  try {
+    await sendMessage(chatId, "🎨 Generating card...");
+
+    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-image",
+        messages: [{ role: "user", content: prompt }],
+        modalities: ["image", "text"],
+      }),
+    });
+
+    const aiData = await aiRes.json();
+    const imageBase64 = aiData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+    if (!imageBase64) {
+      console.error("AI image generation failed:", JSON.stringify(aiData));
+      await sendMessage(chatId, "❌ Failed to generate card image.");
+      return;
     }
-  }
 
-  let card = `╔══════════════════════╗\n`;
-  card += `║  🃏 <b>CALL CARD</b>\n`;
-  card += `╠══════════════════════╣\n`;
-  card += `║\n`;
-  card += `║  🪙 <b>${tokenData.pairName}</b>\n`;
-  card += `║  <code>${ca}</code>\n`;
-  card += `║\n`;
-  card += `║  📊 <b>Performance</b>\n`;
-  card += `║  ${bar}\n`;
-  card += `║  Current: <b>${performance}</b>\n`;
-  card += `║  Peak:    <b>${peakPerformance}</b>\n`;
-  card += `║\n`;
-  card += `║  💰 <b>Price</b>\n`;
-  card += `║  ├ Entry    $${entryPrice > 0 ? entryPrice.toFixed(8) : "N/A"}\n`;
-  card += `║  ├ Current  ${tokenData.priceUsd}\n`;
-  card += `║  └ MC       ${currentMC}\n`;
-  card += `║\n`;
-  card += `║  📋 <b>Call Info</b>\n`;
-  card += `║  ├ Caller   @${poll.sender_username || "Unknown"}\n`;
-  card += `║  ├ Called    ${timeAgo}\n`;
-  card += `║  ├ Entry MC  ${entryMC}\n`;
-  card += `║  └ Vote     ${voteLabels}\n`;
-  card += `║\n`;
-  card += `╚══════════════════════╝`;
+    // Extract base64 data (remove data:image/png;base64, prefix)
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
-  const markup = {
-    inline_keyboard: [[
-      { text: "🗑️", callback_data: "delete_msg" },
-      { text: "🔄", callback_data: `card_${ca}` },
-    ]],
-  };
+    // Build caption
+    let caption = `🃏 <b>Call Card</b>\n\n`;
+    caption += `🪙 <b>${coinName}</b>\n`;
+    caption += `📊 Performance: <b>${perfStr}</b>\n`;
+    caption += `💰 Called at: <b>$${entryMCStr}</b> MC\n`;
+    caption += `👤 Caller: @${callerUsername}\n`;
+    caption += `⏱ ${timeStr}\n`;
+    caption += `\nCA: <code>${ca}</code>`;
 
-  if (tokenData.imageUrl) {
-    await sendPhoto(chatId, tokenData.imageUrl, card, markup);
-  } else {
-    await sendMessage(chatId, card, markup);
+    const markup = {
+      inline_keyboard: [[
+        { text: "🗑️", callback_data: "delete_msg" },
+        { text: "🔄", callback_data: `card_${ca}` },
+      ]],
+    };
+
+    // Send photo via multipart form data
+    const formData = new FormData();
+    formData.append("chat_id", String(chatId));
+    formData.append("photo", new Blob([binaryData], { type: "image/png" }), "card.png");
+    formData.append("caption", caption);
+    formData.append("parse_mode", "HTML");
+    formData.append("reply_markup", JSON.stringify(markup));
+
+    await fetch(`${TELEGRAM_API}/sendPhoto`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch (err) {
+    console.error("Card generation error:", err);
+    await sendMessage(chatId, "❌ Failed to generate card. Try again.");
   }
 }
-
-// ─── Handlers ───
 
 async function handleMessage(message: any) {
   const text = message.text;
