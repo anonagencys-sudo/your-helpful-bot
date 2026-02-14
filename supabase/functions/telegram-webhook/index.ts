@@ -754,6 +754,24 @@ async function handleMessage(message: any) {
   if (cmdMatch) {
     const cmd = `/${cmdMatch[1].toLowerCase()}`;
     
+    // Handle /ca command - list all commands
+    if (cmd === "/ca" || cmd === "/start" || cmd === "/help") {
+      let helpMsg = `🤖 <b>Available Commands</b>\n\n`;
+      helpMsg += `📋 <b>General</b>\n`;
+      helpMsg += `├ /ca - Show all commands\n`;
+      helpMsg += `├ /card &lt;CA&gt; - Generate call card\n`;
+      helpMsg += `└ /lb - Full leaderboard\n\n`;
+      helpMsg += `🏆 <b>Category Leaderboards</b>\n`;
+      helpMsg += `├ /ga - Gamble leaderboard\n`;
+      helpMsg += `├ /ct - CTO leaderboard\n`;
+      helpMsg += `├ /vo - Volume leaderboard\n`;
+      helpMsg += `├ /gd - Good Dev leaderboard\n`;
+      helpMsg += `└ /al - Alpha leaderboard\n\n`;
+      helpMsg += `💡 Send any Solana CA to create a poll!`;
+      await sendMessage(chatId, helpMsg);
+      return;
+    }
+
     // Handle /card command
     if (cmd === "/card") {
       const ca = extractSolanaCA(text);
@@ -990,12 +1008,30 @@ Deno.serve(async (req) => {
   if (req.method === "GET" && url.searchParams.get("action") === "register") {
     try {
       const webhookUrl = `${SUPABASE_URL}/functions/v1/telegram-webhook`;
-      const res = await fetch(`${TELEGRAM_API}/setWebhook`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: webhookUrl }),
-      });
-      const data = await res.json();
+      const [webhookRes, cmdRes] = await Promise.all([
+        fetch(`${TELEGRAM_API}/setWebhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: webhookUrl }),
+        }),
+        fetch(`${TELEGRAM_API}/setMyCommands`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            commands: [
+              { command: "ca", description: "Show all commands" },
+              { command: "card", description: "Generate call card for a CA" },
+              { command: "lb", description: "Full leaderboard" },
+              { command: "ga", description: "Gamble leaderboard" },
+              { command: "ct", description: "CTO leaderboard" },
+              { command: "vo", description: "Volume leaderboard" },
+              { command: "gd", description: "Good Dev leaderboard" },
+              { command: "al", description: "Alpha leaderboard" },
+            ],
+          }),
+        }),
+      ]);
+      const data = await webhookRes.json();
       return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } catch (err) {
       return new Response(JSON.stringify({ ok: false, description: String(err) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
