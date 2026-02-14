@@ -40,8 +40,10 @@ export type Database = {
           chat_id: number
           contract_address: string
           created_at: string
+          entry_price_usd: number | null
           id: string
           message_id: number | null
+          peak_price_usd: number | null
           sender_user_id: number
           sender_username: string | null
           telegram_poll_id: string | null
@@ -52,8 +54,10 @@ export type Database = {
           chat_id: number
           contract_address: string
           created_at?: string
+          entry_price_usd?: number | null
           id?: string
           message_id?: number | null
+          peak_price_usd?: number | null
           sender_user_id: number
           sender_username?: string | null
           telegram_poll_id?: string | null
@@ -64,8 +68,10 @@ export type Database = {
           chat_id?: number
           contract_address?: string
           created_at?: string
+          entry_price_usd?: number | null
           id?: string
           message_id?: number | null
+          peak_price_usd?: number | null
           sender_user_id?: number
           sender_username?: string | null
           telegram_poll_id?: string | null
