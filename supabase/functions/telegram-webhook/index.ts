@@ -96,6 +96,21 @@ async function sendPhoto(chatId: number, photoUrl: string, caption: string, repl
   });
 }
 
+async function editMessageText(chatId: number, messageId: number, text: string, reply_markup?: any) {
+  await fetch(`${TELEGRAM_API}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: reply_markup ? JSON.stringify(reply_markup) : undefined,
+    }),
+  });
+}
+
 async function deleteMessage(chatId: number, messageId: number) {
   await fetch(`${TELEGRAM_API}/deleteMessage`, {
     method: "POST",
@@ -129,6 +144,7 @@ function formatNumber(num: number): string {
 
 interface TokenData {
   priceUsd: string;
+  priceUsdRaw: number;
   priceChange: string;
   marketCap: string;
   volume24h: string;
@@ -140,11 +156,9 @@ interface TokenData {
   ath: string;
   pairName: string;
   imageUrl: string | null;
-  // Socials
   twitterUrl: string | null;
   websiteUrl: string | null;
   telegramUrl: string | null;
-  // Security / Boost
   dexPaid: boolean;
 }
 
@@ -165,7 +179,6 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
     const buys = pair.txns?.h1?.buys != null ? String(pair.txns.h1.buys) : "N/A";
     const sells = pair.txns?.h1?.sells != null ? String(pair.txns.h1.sells) : "N/A";
 
-    // Self-tracked ATH
     const currentPrice = pair.priceUsd ? Number(pair.priceUsd) : 0;
     const coinName = pair.baseToken?.name || "Unknown";
     let athStr = "N/A";
@@ -200,7 +213,6 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
       }
     }
 
-    // Extract socials from DexScreener
     const socials = pair.info?.socials || [];
     let twitterUrl: string | null = null;
     let websiteUrl: string | null = null;
@@ -214,11 +226,11 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
       websiteUrl = pair.info.websites[0]?.url || null;
     }
 
-    // DEX Paid / Boost detection
     const dexPaid = !!(pair.boosts?.active || pair.labels?.includes("boost"));
 
     return {
       priceUsd: pair.priceUsd ? `$${pair.priceUsd}` : "N/A",
+      priceUsdRaw: currentPrice,
       priceChange: priceChange24h,
       marketCap: pair.marketCap ? `$${formatNumber(Number(pair.marketCap))}` : "N/A",
       volume24h: pair.volume?.h24 ? `$${formatNumber(Number(pair.volume.h24))}` : "N/A",
@@ -241,6 +253,18 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
   }
 }
 
+// Fetch just the current price for a CA (lightweight)
+async function fetchCurrentPrice(ca: string): Promise<number> {
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
+    const data = await res.json();
+    const pair = data?.pairs?.[0];
+    return pair?.priceUsd ? Number(pair.priceUsd) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // ─── Build result message ───
 
 function buildResultMessage(
@@ -252,14 +276,12 @@ function buildResultMessage(
 ): string {
   const coinName = tokenData?.pairName || "Unknown";
 
-  // Header
   let msg = `📊 <b>Information about coin</b>\n\n`;
   msg += `🪙 <b>${coinName}</b>\n\n`;
   msg += `CA: <code>${ca}</code>\n\n`;
   msg += `Information: <b>${voteLabels}</b>\n`;
   msg += `Voted by: @${senderUsername}`;
 
-  // Socials section
   if (tokenData) {
     const socialLinks: string[] = [];
     if (tokenData.twitterUrl) socialLinks.push(`<a href="${tokenData.twitterUrl}">𝕏</a>`);
@@ -272,7 +294,6 @@ function buildResultMessage(
     }
   }
 
-  // Stats section
   if (tokenData) {
     msg += `\n\n📊 <b>Stats</b>\n`;
     msg += `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n`;
@@ -284,16 +305,170 @@ function buildResultMessage(
     msg += `└ ATH     ${tokenData.ath}`;
   }
 
-  // Security section
   if (tokenData) {
     msg += `\n\n🛡 <b>Security</b>\n`;
     msg += `└ DEX Paid  ${tokenData.dexPaid ? "✅ Yes" : "❌ No"}`;
   }
 
-  // Affiliate links
   msg += `\n\n🔽 Buy via:\n\n${affiliateText}`;
 
   return msg;
+}
+
+// ─── Leaderboard ───
+
+const PERIOD_LABELS: Record<string, string> = {
+  "12h": "12h",
+  "1d": "1d",
+  "1w": "1w",
+  "2w": "2w",
+};
+
+const PERIOD_HOURS: Record<string, number> = {
+  "12h": 12,
+  "1d": 24,
+  "1w": 168,
+  "2w": 336,
+};
+
+function getLeaderboardMarkup(activePeriod: string) {
+  return {
+    inline_keyboard: [
+      [
+        { text: activePeriod === "12h" ? "☑️ 12H" : "12H", callback_data: "lb_12h" },
+        { text: activePeriod === "1d" ? "☑️ 1D" : "1D", callback_data: "lb_1d" },
+        { text: activePeriod === "1w" ? "☑️ 1W" : "1W", callback_data: "lb_1w" },
+        { text: activePeriod === "2w" ? "☑️ 2W" : "2W", callback_data: "lb_2w" },
+      ],
+      [{ text: "🗑️", callback_data: "delete_msg" }],
+    ],
+  };
+}
+
+const RANK_EMOJIS = ["🏆", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+
+async function buildLeaderboardText(chatId: number, period: string): Promise<string> {
+  const hours = PERIOD_HOURS[period] || 24;
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+  // Get all voted polls in this chat within the period that have entry prices
+  const { data: polls } = await supabase
+    .from("polls")
+    .select("*")
+    .eq("chat_id", chatId)
+    .not("vote", "is", null)
+    .not("entry_price_usd", "is", null)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false });
+
+  if (!polls || polls.length === 0) {
+    return `🏆 <b>Leaderboard</b>\n\n📊 <b>Group Stats</b>\n├ Period    ${PERIOD_LABELS[period]}\n└ Calls     0\n\nNo calls in this period.`;
+  }
+
+  // Update peak prices by fetching current prices
+  // Batch unique CAs to avoid redundant fetches
+  const uniqueCAs = [...new Set(polls.map(p => p.contract_address))];
+  const priceMap: Record<string, number> = {};
+
+  // Fetch prices in parallel (max 10 concurrent)
+  const batches: string[][] = [];
+  for (let i = 0; i < uniqueCAs.length; i += 10) {
+    batches.push(uniqueCAs.slice(i, i + 10));
+  }
+
+  for (const batch of batches) {
+    const results = await Promise.all(batch.map(async (ca) => {
+      const price = await fetchCurrentPrice(ca);
+      return { ca, price };
+    }));
+    for (const r of results) {
+      priceMap[r.ca] = r.price;
+    }
+  }
+
+  // Update peak prices in DB
+  for (const poll of polls) {
+    const currentPrice = priceMap[poll.contract_address] || 0;
+    const existingPeak = poll.peak_price_usd ? Number(poll.peak_price_usd) : 0;
+    if (currentPrice > existingPeak) {
+      await supabase
+        .from("polls")
+        .update({ peak_price_usd: currentPrice })
+        .eq("id", poll.id);
+      poll.peak_price_usd = currentPrice;
+    }
+  }
+
+  // Calculate returns for each call
+  interface CallResult {
+    coinName: string;
+    username: string;
+    returnX: number;
+    ca: string;
+  }
+
+  const callResults: CallResult[] = [];
+
+  for (const poll of polls) {
+    const entryPrice = Number(poll.entry_price_usd);
+    const peakPrice = poll.peak_price_usd ? Number(poll.peak_price_usd) : (priceMap[poll.contract_address] || 0);
+    if (entryPrice <= 0) continue;
+
+    const returnX = peakPrice / entryPrice;
+
+    // Get coin name from token_ath table
+    const { data: athData } = await supabase
+      .from("token_ath")
+      .select("coin_name")
+      .eq("contract_address", poll.contract_address)
+      .single();
+
+    callResults.push({
+      coinName: athData?.coin_name || poll.contract_address.slice(0, 6),
+      username: poll.sender_username || "Unknown",
+      returnX,
+      ca: poll.contract_address,
+    });
+  }
+
+  // Sort by return descending
+  callResults.sort((a, b) => b.returnX - a.returnX);
+
+  // Group stats
+  const totalCalls = callResults.length;
+  const hits = callResults.filter(c => c.returnX >= 2).length;
+  const hitRate = totalCalls > 0 ? Math.round((hits / totalCalls) * 100) : 0;
+  const returns = callResults.map(c => c.returnX).sort((a, b) => a - b);
+  const medianReturn = returns.length > 0 ? returns[Math.floor(returns.length / 2)] : 0;
+  const bestReturn = returns.length > 0 ? returns[returns.length - 1] : 0;
+  const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+
+  let msg = `🏆 <b>Leaderboard</b>\n\n`;
+  msg += `📊 <b>Group Stats</b>\n`;
+  msg += `├ Period    <b>${PERIOD_LABELS[period]}</b>\n`;
+  msg += `├ Calls     <b>${totalCalls}</b>\n`;
+  msg += `├ Hit Rate  <b>${hitRate}%</b>\n`;
+  msg += `├ Median    <b>${medianReturn.toFixed(1)}x</b>\n`;
+  msg += `└ Return    <b>${bestReturn.toFixed(1)}x</b> (Avg: ${avgReturn.toFixed(1)}x)\n`;
+
+  // Top 10
+  const top10 = callResults.slice(0, 10);
+  if (top10.length > 0) {
+    msg += `\n`;
+    for (let i = 0; i < top10.length; i++) {
+      const c = top10[i];
+      const emoji = RANK_EMOJIS[i] || `${i + 1}`;
+      msg += `${emoji} <b>${c.coinName}</b> ≫ @${c.username} [${c.returnX.toFixed(1)}x]\n`;
+    }
+  }
+
+  return msg;
+}
+
+async function handleLeaderboard(chatId: number, period: string = "1d") {
+  const text = await buildLeaderboardText(chatId, period);
+  const markup = getLeaderboardMarkup(period);
+  await sendMessage(chatId, text, markup);
 }
 
 // ─── Handlers ───
@@ -305,6 +480,12 @@ async function handleMessage(message: any) {
   const chatId = message.chat.id;
   const userId = message.from.id;
   const username = message.from.username || message.from.first_name || "Unknown";
+
+  // Handle /lb command
+  if (text.trim().startsWith("/lb")) {
+    await handleLeaderboard(chatId, "1d");
+    return;
+  }
 
   const ca = extractSolanaCA(text);
   if (!ca) return;
@@ -337,6 +518,9 @@ async function handleMessage(message: any) {
     return;
   }
 
+  // Fetch entry price before creating poll
+  const entryPrice = await fetchCurrentPrice(ca);
+
   const sentMsg = await sendPoll(chatId, ca, username);
   const messageId = sentMsg.result?.message_id;
   const pollId = sentMsg.result?.poll?.id;
@@ -348,6 +532,8 @@ async function handleMessage(message: any) {
     sender_username: username,
     message_id: messageId,
     telegram_poll_id: pollId,
+    entry_price_usd: entryPrice > 0 ? entryPrice : null,
+    peak_price_usd: entryPrice > 0 ? entryPrice : null,
   });
 }
 
@@ -397,6 +583,32 @@ async function handlePollAnswer(pollAnswer: any) {
     await sendPhoto(poll.chat_id, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
   } else {
     await sendMessage(poll.chat_id, resultText, DELETE_BUTTON_MARKUP);
+  }
+}
+
+async function handleCallbackQuery(cb: any) {
+  const data = cb.data;
+  const chatId = cb.message?.chat?.id;
+  const messageId = cb.message?.message_id;
+
+  if (!chatId || !messageId) return;
+
+  if (data === "delete_msg") {
+    await deleteMessage(chatId, messageId);
+    await answerCallbackQuery(cb.id, "Deleted");
+    return;
+  }
+
+  // Leaderboard period buttons
+  if (data?.startsWith("lb_")) {
+    const period = data.replace("lb_", "");
+    if (PERIOD_HOURS[period]) {
+      const text = await buildLeaderboardText(chatId, period);
+      const markup = getLeaderboardMarkup(period);
+      await editMessageText(chatId, messageId, text, markup);
+      await answerCallbackQuery(cb.id);
+    }
+    return;
   }
 }
 
@@ -453,11 +665,7 @@ Deno.serve(async (req) => {
     } else if (update.poll_answer) {
       await handlePollAnswer(update.poll_answer);
     } else if (update.callback_query) {
-      const cb = update.callback_query;
-      if (cb.data === "delete_msg" && cb.message) {
-        await deleteMessage(cb.message.chat.id, cb.message.message_id);
-        await answerCallbackQuery(cb.id, "Deleted");
-      }
+      await handleCallbackQuery(update.callback_query);
     }
 
     return new Response(JSON.stringify({ ok: true }), {
