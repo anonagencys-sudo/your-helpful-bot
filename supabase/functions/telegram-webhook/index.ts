@@ -53,11 +53,8 @@ async function buildAffiliateText(ca: string): Promise<string> {
   return lines.join("\n");
 }
 
-async function sendPoll(chatId: number, ca: string, username: string, mcStr?: string | null): Promise<any> {
-  let question = "Info about coin\n(you can select multiple options)";
-  if (mcStr) {
-    question += `\n\n🔥 First Call @${username} @ ${mcStr}`;
-  }
+async function sendPoll(chatId: number, ca: string): Promise<any> {
+  const question = "Info about coin\n(you can select multiple options)";
   const res = await fetch(`${TELEGRAM_API}/sendPoll`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -630,9 +627,14 @@ async function handleMessage(message: any) {
   const entryPrice = tokenData?.priceUsdRaw || 0;
   const entryMC = tokenData?.marketCap || null;
 
-  const sentMsg = await sendPoll(chatId, ca, username, entryMC);
+  const sentMsg = await sendPoll(chatId, ca);
   const messageId = sentMsg.result?.message_id;
   const pollId = sentMsg.result?.poll?.id;
+
+  // Send first call info as a reply below the poll
+  if (entryMC && messageId) {
+    await sendMessage(chatId, `😈 @${username} @ ${entryMC}`);
+  }
 
   await supabase.from("polls").insert({
     chat_id: chatId,
