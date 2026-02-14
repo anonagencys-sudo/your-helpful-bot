@@ -317,6 +317,25 @@ function buildResultMessage(
 
 // ─── Leaderboard ───
 
+// Command → vote filter mapping
+const LEADERBOARD_COMMANDS: Record<string, { filter: string | null; title: string }> = {
+  "/lb": { filter: null, title: "Leaderboard" },
+  "/ga": { filter: "gamble", title: "Gamble Leaderboard" },
+  "/ct": { filter: "cto", title: "CTO Leaderboard" },
+  "/vo": { filter: "volume", title: "Volume Leaderboard" },
+  "/gd": { filter: "good_dev", title: "Good Dev Leaderboard" },
+  "/al": { filter: "alpha", title: "Alpha Leaderboard" },
+};
+
+const FILTER_TITLES: Record<string, string> = {
+  "": "Leaderboard",
+  "gamble": "🎰 Gamble Leaderboard",
+  "cto": "👑 CTO Leaderboard",
+  "volume": "📈 Volume Leaderboard",
+  "good_dev": "👨‍💻 Good Dev Leaderboard",
+  "alpha": "🔮 Alpha Leaderboard",
+};
+
 const PERIOD_LABELS: Record<string, string> = {
   "12h": "12h",
   "1d": "1d",
@@ -331,14 +350,15 @@ const PERIOD_HOURS: Record<string, number> = {
   "2w": 336,
 };
 
-function getLeaderboardMarkup(activePeriod: string) {
+function getLeaderboardMarkup(activePeriod: string, voteFilter: string = "") {
+  const filterPrefix = voteFilter ? `${voteFilter}_` : "";
   return {
     inline_keyboard: [
       [
-        { text: activePeriod === "12h" ? "☑️ 12H" : "12H", callback_data: "lb_12h" },
-        { text: activePeriod === "1d" ? "☑️ 1D" : "1D", callback_data: "lb_1d" },
-        { text: activePeriod === "1w" ? "☑️ 1W" : "1W", callback_data: "lb_1w" },
-        { text: activePeriod === "2w" ? "☑️ 2W" : "2W", callback_data: "lb_2w" },
+        { text: activePeriod === "12h" ? "☑️ 12H" : "12H", callback_data: `lb_${filterPrefix}12h` },
+        { text: activePeriod === "1d" ? "☑️ 1D" : "1D", callback_data: `lb_${filterPrefix}1d` },
+        { text: activePeriod === "1w" ? "☑️ 1W" : "1W", callback_data: `lb_${filterPrefix}1w` },
+        { text: activePeriod === "2w" ? "☑️ 2W" : "2W", callback_data: `lb_${filterPrefix}2w` },
       ],
       [{ text: "🗑️", callback_data: "delete_msg" }],
     ],
@@ -347,12 +367,11 @@ function getLeaderboardMarkup(activePeriod: string) {
 
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 
-async function buildLeaderboardText(chatId: number, period: string): Promise<string> {
+async function buildLeaderboardText(chatId: number, period: string, voteFilter: string = ""): Promise<string> {
   const hours = PERIOD_HOURS[period] || 24;
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
-  // Get all voted polls in this chat within the period that have entry prices
-  const { data: polls } = await supabase
+  let query = supabase
     .from("polls")
     .select("*")
     .eq("chat_id", chatId)
@@ -361,16 +380,22 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
     .gte("created_at", since)
     .order("created_at", { ascending: false });
 
-  if (!polls || polls.length === 0) {
-    return `🏆 <b>Leaderboard</b>\n\n📊 <b>Group Stats</b>\n├ Period    ${PERIOD_LABELS[period]}\n└ Calls     0\n\nNo calls in this period.`;
+  // Filter by vote category if specified
+  if (voteFilter) {
+    query = query.like("vote", `%${voteFilter}%`);
   }
 
-  // Update peak prices by fetching current prices
-  // Batch unique CAs to avoid redundant fetches
+  const { data: polls } = await query;
+
+  const title = FILTER_TITLES[voteFilter] || "🏆 Leaderboard";
+
+  if (!polls || polls.length === 0) {
+    return `${title}\n\n📊 <b>Group Stats</b>\n├ Period    ${PERIOD_LABELS[period]}\n└ Calls     0\n\nNo calls in this period.`;
+  }
+
   const uniqueCAs = [...new Set(polls.map(p => p.contract_address))];
   const priceMap: Record<string, number> = {};
 
-  // Fetch prices in parallel (max 10 concurrent)
   const batches: string[][] = [];
   for (let i = 0; i < uniqueCAs.length; i += 10) {
     batches.push(uniqueCAs.slice(i, i + 10));
@@ -386,7 +411,6 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
     }
   }
 
-  // Update peak prices in DB
   for (const poll of polls) {
     const currentPrice = priceMap[poll.contract_address] || 0;
     const existingPeak = poll.peak_price_usd ? Number(poll.peak_price_usd) : 0;
@@ -399,7 +423,6 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
     }
   }
 
-  // Calculate returns for each call
   interface CallResult {
     coinName: string;
     username: string;
@@ -416,7 +439,6 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
 
     const returnX = peakPrice / entryPrice;
 
-    // Get coin name from token_ath table
     const { data: athData } = await supabase
       .from("token_ath")
       .select("coin_name")
@@ -431,10 +453,8 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
     });
   }
 
-  // Sort by return descending
   callResults.sort((a, b) => b.returnX - a.returnX);
 
-  // Group stats
   const totalCalls = callResults.length;
   const hits = callResults.filter(c => c.returnX >= 2).length;
   const hitRate = totalCalls > 0 ? Math.round((hits / totalCalls) * 100) : 0;
@@ -443,7 +463,7 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
   const bestReturn = returns.length > 0 ? returns[returns.length - 1] : 0;
   const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
 
-  let msg = `🏆 <b>Leaderboard</b>\n\n`;
+  let msg = `${title}\n\n`;
   msg += `📊 <b>Group Stats</b>\n`;
   msg += `├ Period    <b>${PERIOD_LABELS[period]}</b>\n`;
   msg += `├ Calls     <b>${totalCalls}</b>\n`;
@@ -451,7 +471,6 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
   msg += `├ Median    <b>${medianReturn.toFixed(1)}x</b>\n`;
   msg += `└ Return    <b>${bestReturn.toFixed(1)}x</b> (Avg: ${avgReturn.toFixed(1)}x)\n`;
 
-  // Top 10
   const top10 = callResults.slice(0, 10);
   if (top10.length > 0) {
     msg += `\n`;
@@ -465,9 +484,9 @@ async function buildLeaderboardText(chatId: number, period: string): Promise<str
   return msg;
 }
 
-async function handleLeaderboard(chatId: number, period: string = "1d") {
-  const text = await buildLeaderboardText(chatId, period);
-  const markup = getLeaderboardMarkup(period);
+async function handleLeaderboard(chatId: number, period: string = "1d", voteFilter: string = "") {
+  const text = await buildLeaderboardText(chatId, period, voteFilter);
+  const markup = getLeaderboardMarkup(period, voteFilter);
   await sendMessage(chatId, text, markup);
 }
 
@@ -481,10 +500,15 @@ async function handleMessage(message: any) {
   const userId = message.from.id;
   const username = message.from.username || message.from.first_name || "Unknown";
 
-  // Handle /lb command
-  if (text.trim().startsWith("/lb")) {
-    await handleLeaderboard(chatId, "1d");
-    return;
+  // Handle leaderboard commands: /lb, /ga, /ct, /vo, /gd, /al
+  const cmdMatch = text.trim().match(/^\/(\w+)/);
+  if (cmdMatch) {
+    const cmd = `/${cmdMatch[1].toLowerCase()}`;
+    const lbConfig = LEADERBOARD_COMMANDS[cmd];
+    if (lbConfig) {
+      await handleLeaderboard(chatId, "1d", lbConfig.filter || "");
+      return;
+    }
   }
 
   const ca = extractSolanaCA(text);
@@ -599,12 +623,25 @@ async function handleCallbackQuery(cb: any) {
     return;
   }
 
-  // Leaderboard period buttons
+  // Leaderboard period buttons: lb_12h, lb_gamble_1d, etc.
   if (data?.startsWith("lb_")) {
-    const period = data.replace("lb_", "");
+    const parts = data.replace("lb_", "");
+    let period = parts;
+    let voteFilter = "";
+
+    // Check if there's a filter prefix (e.g. "gamble_1d")
+    const lastUnderscore = parts.lastIndexOf("_");
+    if (lastUnderscore > 0) {
+      const possiblePeriod = parts.slice(lastUnderscore + 1);
+      if (PERIOD_HOURS[possiblePeriod]) {
+        voteFilter = parts.slice(0, lastUnderscore);
+        period = possiblePeriod;
+      }
+    }
+
     if (PERIOD_HOURS[period]) {
-      const text = await buildLeaderboardText(chatId, period);
-      const markup = getLeaderboardMarkup(period);
+      const text = await buildLeaderboardText(chatId, period, voteFilter);
+      const markup = getLeaderboardMarkup(period, voteFilter);
       await editMessageText(chatId, messageId, text, markup);
       await answerCallbackQuery(cb.id);
     }
