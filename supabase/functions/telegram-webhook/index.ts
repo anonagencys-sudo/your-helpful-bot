@@ -265,6 +265,45 @@ async function fetchCurrentPrice(ca: string): Promise<number> {
   }
 }
 
+// Get the first caller for a CA (earliest poll across all chats)
+async function getFirstCaller(ca: string): Promise<{ username: string; mcFormatted: string } | null> {
+  const { data } = await supabase
+    .from("polls")
+    .select("sender_username, entry_price_usd")
+    .eq("contract_address", ca)
+    .not("entry_price_usd", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .single();
+
+  if (!data) return null;
+
+  // Estimate MC from entry price (use token_ath for supply context, or just show the MC at time)
+  // We'll fetch the current pair to get the price-to-MC ratio, then back-calculate
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
+    const apiData = await res.json();
+    const pair = apiData?.pairs?.[0];
+    if (pair && pair.priceUsd && pair.marketCap) {
+      const currentPrice = Number(pair.priceUsd);
+      const currentMC = Number(pair.marketCap);
+      if (currentPrice > 0) {
+        const ratio = currentMC / currentPrice;
+        const entryMC = Number(data.entry_price_usd) * ratio;
+        return {
+          username: data.sender_username || "Unknown",
+          mcFormatted: `$${formatNumber(entryMC)}`,
+        };
+      }
+    }
+  } catch {}
+
+  return {
+    username: data.sender_username || "Unknown",
+    mcFormatted: "N/A",
+  };
+}
+
 // ─── Build result message ───
 
 function buildResultMessage(
@@ -273,6 +312,8 @@ function buildResultMessage(
   senderUsername: string,
   tokenData: TokenData | null,
   affiliateText: string,
+  firstCallUsername?: string,
+  firstCallMC?: string,
 ): string {
   const coinName = tokenData?.pairName || "Unknown";
 
@@ -308,6 +349,11 @@ function buildResultMessage(
   if (tokenData) {
     msg += `\n\n🛡 <b>Security</b>\n`;
     msg += `└ DEX Paid  ${tokenData.dexPaid ? "✅ Yes" : "❌ No"}`;
+  }
+
+  // First Call line
+  if (firstCallUsername && firstCallMC) {
+    msg += `\n\n🔥 First Call @${firstCallUsername} @ ${firstCallMC}`;
   }
 
   msg += `\n\n🔽 Buy via:\n\n${affiliateText}`;
@@ -523,12 +569,13 @@ async function handleMessage(message: any) {
 
   if (existing) {
     if (existing.vote) {
-      const [tokenData, affiliateText] = await Promise.all([
+      const [tokenData, affiliateText, firstCaller] = await Promise.all([
         fetchTokenData(ca),
         buildAffiliateText(ca),
+        getFirstCaller(ca),
       ]);
       const voteLabels = existing.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
-      const resultText = buildResultMessage(ca, voteLabels, existing.sender_username || "Unknown", tokenData, affiliateText);
+      const resultText = buildResultMessage(ca, voteLabels, existing.sender_username || "Unknown", tokenData, affiliateText, firstCaller?.username, firstCaller?.mcFormatted);
 
       if (tokenData?.imageUrl) {
         await sendPhoto(chatId, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
@@ -542,8 +589,10 @@ async function handleMessage(message: any) {
     return;
   }
 
-  // Fetch entry price before creating poll
-  const entryPrice = await fetchCurrentPrice(ca);
+  // Fetch entry price and token data before creating poll
+  const tokenData = await fetchTokenData(ca);
+  const entryPrice = tokenData?.priceUsdRaw || 0;
+  const entryMC = tokenData?.marketCap || null;
 
   const sentMsg = await sendPoll(chatId, ca, username);
   const messageId = sentMsg.result?.message_id;
@@ -559,6 +608,11 @@ async function handleMessage(message: any) {
     entry_price_usd: entryPrice > 0 ? entryPrice : null,
     peak_price_usd: entryPrice > 0 ? entryPrice : null,
   });
+
+  // Send "First Call" message below the poll
+  if (entryMC) {
+    await sendMessage(chatId, `🔥 First Call @${username} @ ${entryMC}`);
+  }
 }
 
 async function handlePollAnswer(pollAnswer: any) {
@@ -595,13 +649,14 @@ async function handlePollAnswer(pollAnswer: any) {
     await deleteMessage(poll.chat_id, poll.message_id);
   }
 
-  const [tokenData, affiliateText] = await Promise.all([
+  const [tokenData, affiliateText, firstCaller] = await Promise.all([
     fetchTokenData(poll.contract_address),
     buildAffiliateText(poll.contract_address),
+    getFirstCaller(poll.contract_address),
   ]);
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
-  const resultText = buildResultMessage(poll.contract_address, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText);
+  const resultText = buildResultMessage(poll.contract_address, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText, firstCaller?.username, firstCaller?.mcFormatted);
 
   if (tokenData?.imageUrl) {
     await sendPhoto(poll.chat_id, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
