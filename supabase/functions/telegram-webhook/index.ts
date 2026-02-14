@@ -274,11 +274,11 @@ async function fetchCurrentPrice(ca: string): Promise<number> {
   }
 }
 
-// Get the first caller for a CA with price change since first call
-async function getFirstCaller(ca: string): Promise<{ username: string; mcFormatted: string; changeStr: string } | null> {
+// Get the first caller for a CA with price change and time elapsed
+async function getFirstCaller(ca: string): Promise<{ username: string; mcFormatted: string; changeStr: string; timeAgo: string } | null> {
   const { data } = await supabase
     .from("polls")
-    .select("sender_username, entry_price_usd")
+    .select("sender_username, entry_price_usd, created_at")
     .eq("contract_address", ca)
     .not("entry_price_usd", "is", null)
     .order("created_at", { ascending: true })
@@ -286,6 +286,17 @@ async function getFirstCaller(ca: string): Promise<{ username: string; mcFormatt
     .single();
 
   if (!data) return null;
+
+  // Calculate time ago
+  const createdAt = new Date(data.created_at).getTime();
+  const now = Date.now();
+  const diffMs = now - createdAt;
+  const diffMin = Math.floor(diffMs / 60000);
+  let timeAgo: string;
+  if (diffMin < 1) timeAgo = "now";
+  else if (diffMin < 60) timeAgo = `${diffMin}m`;
+  else if (diffMin < 1440) timeAgo = `${Math.floor(diffMin / 60)}h`;
+  else timeAgo = `${Math.floor(diffMin / 1440)}d`;
 
   try {
     const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
@@ -303,17 +314,18 @@ async function getFirstCaller(ca: string): Promise<{ username: string; mcFormatt
         let changeStr: string;
         if (changePct >= 100) {
           const multiplier = currentPrice / entryPrice;
-          changeStr = `🟢 ${multiplier.toFixed(1)}x`;
+          changeStr = `${multiplier.toFixed(1)}x`;
         } else if (changePct >= 0) {
-          changeStr = `🟢 +${changePct.toFixed(0)}%`;
+          changeStr = `+${changePct.toFixed(0)}%`;
         } else {
-          changeStr = `🔴 ${changePct.toFixed(0)}%`;
+          changeStr = `${changePct.toFixed(0)}%`;
         }
 
         return {
           username: data.sender_username || "Unknown",
           mcFormatted: `$${formatNumber(entryMC)}`,
           changeStr,
+          timeAgo,
         };
       }
     }
@@ -323,6 +335,7 @@ async function getFirstCaller(ca: string): Promise<{ username: string; mcFormatt
     username: data.sender_username || "Unknown",
     mcFormatted: "N/A",
     changeStr: "",
+    timeAgo,
   };
 }
 
@@ -334,9 +347,7 @@ function buildResultMessage(
   senderUsername: string,
   tokenData: TokenData | null,
   affiliateText: string,
-  firstCallUsername?: string,
-  firstCallMC?: string,
-  firstCallChange?: string,
+  firstCaller?: { username: string; mcFormatted: string; changeStr: string; timeAgo: string } | null,
 ): string {
   const coinName = tokenData?.pairName || "Unknown";
 
@@ -374,10 +385,10 @@ function buildResultMessage(
     msg += `└ DEX Paid  ${tokenData.dexPaid ? "✅ Yes" : "❌ No"}`;
   }
 
-  // First Call line
-  if (firstCallUsername && firstCallMC) {
-    const changePart = firstCallChange ? ` ${firstCallChange}` : "";
-    msg += `\n\n🔥 First Call @${firstCallUsername} @ ${firstCallMC}${changePart}`;
+  if (firstCaller && firstCaller.mcFormatted) {
+    const changePart = firstCaller.changeStr ? ` [${firstCaller.changeStr}]` : "";
+    const timePart = firstCaller.timeAgo ? ` (${firstCaller.timeAgo})` : "";
+    msg += `\n\n😈 @${firstCaller.username} @ ${firstCaller.mcFormatted}${changePart}${timePart}`;
   }
 
   msg += `\n\n🔽 Buy via:\n\n${affiliateText}`;
@@ -599,7 +610,7 @@ async function handleMessage(message: any) {
         getFirstCaller(ca),
       ]);
       const voteLabels = existing.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
-      const resultText = buildResultMessage(ca, voteLabels, existing.sender_username || "Unknown", tokenData, affiliateText, firstCaller?.username, firstCaller?.mcFormatted, firstCaller?.changeStr);
+      const resultText = buildResultMessage(ca, voteLabels, existing.sender_username || "Unknown", tokenData, affiliateText, firstCaller);
       const markup = getResultMarkup(ca);
 
       if (tokenData?.imageUrl) {
@@ -676,7 +687,7 @@ async function handlePollAnswer(pollAnswer: any) {
   ]);
 
   const voteLabels = optionIds.map((i: number) => POLL_OPTIONS[i]).join(", ");
-  const resultText = buildResultMessage(poll.contract_address, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText, firstCaller?.username, firstCaller?.mcFormatted, firstCaller?.changeStr);
+  const resultText = buildResultMessage(poll.contract_address, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText, firstCaller);
   const markup = getResultMarkup(poll.contract_address);
 
   if (tokenData?.imageUrl) {
@@ -718,7 +729,7 @@ async function handleCallbackQuery(cb: any) {
         getFirstCaller(ca),
       ]);
       const voteLabels = poll.vote.split(",").map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
-      const resultText = buildResultMessage(ca, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText, firstCaller?.username, firstCaller?.mcFormatted, firstCaller?.changeStr);
+      const resultText = buildResultMessage(ca, voteLabels, poll.sender_username || "Unknown", tokenData, affiliateText, firstCaller);
       const markup = getResultMarkup(ca);
 
       // For photo messages we need to edit caption, for text we edit text
