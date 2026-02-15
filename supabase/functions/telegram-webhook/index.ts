@@ -214,7 +214,7 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
 
       if (maxPrice > 0) {
         const athChangePct = ((currentPrice - maxPrice) / maxPrice) * 100;
-        athStr = `$${formatNumber(maxPrice)}`;
+        athStr = maxPrice >= 1 ? `$${formatNumber(maxPrice)}` : `$${maxPrice.toPrecision(4)}`;
         if (currentPrice < maxPrice) {
           athStr += ` (${athChangePct.toFixed(0)}%)`;
         }
