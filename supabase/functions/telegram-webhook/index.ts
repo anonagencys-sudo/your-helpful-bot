@@ -623,7 +623,7 @@ async function handleCardCommand(chatId: number, ca: string) {
   const callerUsername = poll.sender_username || "Unknown";
   const coinName = tokenData.pairName || "Unknown";
 
-  // Calculate performance string (clean, no emoji)
+  // Calculate current performance string
   let perfStr = "N/A";
   if (entryPrice > 0 && currentPrice > 0) {
     const changePct = ((currentPrice - entryPrice) / entryPrice) * 100;
@@ -634,6 +634,20 @@ async function handleCardCommand(chatId: number, ca: string) {
       perfStr = `+${changePct.toFixed(1)}%`;
     } else {
       perfStr = `${changePct.toFixed(1)}%`;
+    }
+  }
+
+  // Calculate highest X (peak multiplier since CA was posted)
+  let highestXStr = "N/A";
+  if (entryPrice > 0 && actualPeak > 0) {
+    const peakChangePct = ((actualPeak - entryPrice) / entryPrice) * 100;
+    if (peakChangePct >= 100) {
+      const peakMultiplier = actualPeak / entryPrice;
+      highestXStr = `${peakMultiplier.toFixed(1)}x`;
+    } else if (peakChangePct >= 0) {
+      highestXStr = `+${peakChangePct.toFixed(1)}%`;
+    } else {
+      highestXStr = `${peakChangePct.toFixed(1)}%`;
     }
   }
 
@@ -670,7 +684,8 @@ async function handleCardCommand(chatId: number, ca: string) {
 - Right side large bold text: "${coinName}" in white
 - Below that: "called at ${entryMCStr}" in gray/white text
 - Center/right: HUGE bold text "${perfStr}" in ${isPositive ? "bright neon green" : "red"} color, this should be the most prominent element
-- Below: "👤 ${callerUsername.toUpperCase()}" in white bold
+- Below performance: "🏆 Highest: ${highestXStr}" in golden/yellow color, slightly smaller than the main performance
+- Below that: "👤 ${callerUsername.toUpperCase()}" in white bold
 - Below that: "⏱ ${timeStr}" in gray
 - Bottom bar: "@pollaris_test" branding in small text
 - The Solana logo icon in top right corner
