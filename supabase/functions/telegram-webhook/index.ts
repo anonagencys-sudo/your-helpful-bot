@@ -212,9 +212,11 @@ async function fetchTokenData(ca: string): Promise<TokenData | null> {
           }, { onConflict: "contract_address" });
       }
 
-      if (maxPrice > 0) {
+      if (maxPrice > 0 && pair.marketCap) {
+        const currentMC = Number(pair.marketCap);
+        const athMC = currentPrice > 0 ? (maxPrice / currentPrice) * currentMC : 0;
         const athChangePct = ((currentPrice - maxPrice) / maxPrice) * 100;
-        athStr = maxPrice >= 1 ? `$${formatNumber(maxPrice)}` : `$${maxPrice.toPrecision(4)}`;
+        athStr = athMC > 0 ? `$${formatNumber(athMC)}` : "N/A";
         if (currentPrice < maxPrice) {
           athStr += ` (${athChangePct.toFixed(0)}%)`;
         }
