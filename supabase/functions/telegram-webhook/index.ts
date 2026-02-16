@@ -731,8 +731,7 @@ LEFT (35%): A stylish anime character, ${theme.accent}-colored outfit, simple po
 RIGHT (65%): Clean text layout with lots of breathing room:
 - "${theme.label}" small badge, top right
 - "${coinName}" bold white, medium size
-- "${perfStr}" HUGE glowing ${isPositive ? theme.accent : "red"} text (main focus)
-- "Highest: ${highestXStr}" golden, smaller
+- "${perfStr}" HUGE glowing ${isPositive ? theme.accent : "red"} text (main focus, biggest element on the card)${isPositive ? `\n- "Highest: ${highestXStr}" golden, smaller` : ""}
 - "@${callerUsername}" and "${timeStr}" small white/gray at bottom
 
 STYLE: Dark ${theme.bg} background, subtle ${theme.accent} border glow, minimal particles. Clean and uncluttered. NO busy backgrounds, NO floating objects. Anime illustrated style only. 16:9 landscape.`;
