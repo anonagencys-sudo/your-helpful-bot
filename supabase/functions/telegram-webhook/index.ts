@@ -724,29 +724,18 @@ async function handleCardCommand(chatId: number, ca: string) {
   // Determine color based on performance
   const isPositive = entryPrice > 0 && currentPrice >= entryPrice;
   // Generate card image using AI with vote-based theme
-  const prompt = `Create a 16:9 landscape crypto trading card image. The design MUST feature:
+  const prompt = `Create a clean, minimal 16:9 landscape crypto trading card. Layout:
 
-**ANIME CHARACTER (MAIN FOCUS - takes up 40-50% of the card):**
-- A full-body stylish anime character standing/posing on the LEFT side
-- The character should be a cool, confident crypto trader with ${theme.accent}-themed outfit
-- Anime art style: detailed, vibrant, dynamic pose, expressive eyes
-- Character should match the ${theme.label} vibe: ${theme.label === "GAMBLE" ? "mischievous gambler with dice/cards" : theme.label === "CTO" ? "tech genius with holographic screens" : theme.label === "VOLUME" ? "energetic trader with charts flying around" : theme.label === "GOOD DEV" ? "focused developer with code symbols" : "elite mysterious figure with golden aura"}
+LEFT (35%): A stylish anime character, ${theme.accent}-colored outfit, simple pose on a clean dark background. ${theme.label === "GAMBLE" ? "Confident boy in purple hoodie" : theme.label === "CTO" ? "Tech-savvy boy in blue jacket with goggles" : theme.label === "VOLUME" ? "Energetic boy in orange jacket" : theme.label === "GOOD DEV" ? "Smart boy in green suit with glasses" : "Elite figure in gold armor with cape"}. Anime art style, NO clutter around the character.
 
-**CARD INFO (RIGHT SIDE):**
-- "${theme.label}" badge in top right with ${theme.accent} glow
-- "${coinName}" in large bold white text
-- HUGE "${perfStr}" in ${isPositive ? "bright glowing " + theme.accent : "red"} - most prominent text element
-- "🏆 Highest: ${highestXStr}" in golden text
-- "Called at $${entryMCStr} MC" in smaller gray text
-- "👤 ${callerUsername.toUpperCase()}" and "⏱ ${timeStr}" in white
-- Bottom row: MC ${tokenData.marketCap} | Price ${tokenData.priceUsd}
+RIGHT (65%): Clean text layout with lots of breathing room:
+- "${theme.label}" small badge, top right
+- "${coinName}" bold white, medium size
+- "${perfStr}" HUGE glowing ${isPositive ? theme.accent : "red"} text (main focus)
+- "Highest: ${highestXStr}" golden, smaller
+- "@${callerUsername}" and "${timeStr}" small white/gray at bottom
 
-**STYLE:**
-- ${theme.bg} dark background with ${theme.accent} neon glow effects and particles
-- Sleek card border with ${theme.accent} glow
-- Anime/illustrated style ONLY - absolutely NO real photos
-- High quality anime art, detailed shading and lighting
-- 16:9 aspect ratio landscape orientation`;
+STYLE: Dark ${theme.bg} background, subtle ${theme.accent} border glow, minimal particles. Clean and uncluttered. NO busy backgrounds, NO floating objects. Anime illustrated style only. 16:9 landscape.`;
 
   try {
     // Send "generating" message and keep its ID to delete later
