@@ -219,6 +219,14 @@ async function handleMessage(message: any) {
   const ca = extractSolanaCA(text);
   if (!ca) return;
 
+  // CHECK GLOBAL PREVIOUS VOTE FOR THIS USER
+const { data: previousVote } = await supabase
+  .from("last_vote_per_user")
+  .select("last_vote")
+  .eq("user_id", userId)
+  .single();
+
+
   const { data: existing } = await supabase
     .from("polls")
     .select("*")
@@ -262,6 +270,55 @@ async function handleMessage(message: any) {
     }
     return;
   }
+// ✅ AUTO USE PREVIOUS GLOBAL VOTE (SKIP POLL)
+if (previousVote?.last_vote) {
+
+  await supabase.from("polls").insert({
+    chat_id: chatId,
+    contract_address: ca,
+    sender_user_id: userId,
+    sender_username: username,
+    vote: previousVote.last_vote,
+    voted_at: new Date().toISOString()
+  });
+
+  const tokenData = await fetchTokenData(ca);
+  const affiliateText = await buildAffiliateText(ca);
+  const coinName = tokenData?.pairName || "Unknown";
+
+  const voteLabels = previousVote.last_vote
+    .split(",")
+    .map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v)
+    .join(", ");
+
+  const marketInfo = tokenData
+    ? `\n\n📊 <b>Stats</b>\n` +
+      `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n` +
+      `├ MC      ${tokenData.marketCap}\n` +
+      `├ Vol     ${tokenData.volume24h}\n` +
+      `├ LP      ${tokenData.liquidity}\n` +
+      `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
+      `└ FDV     ${tokenData.fdv}`
+    : "";
+
+  const resultText =
+    `📊 <b>Information about coin</b>\n\n` +
+    `🪙 <b>${coinName}</b>\n\n` +
+    `CA: <code>${ca}</code>\n\n` +
+    `Information: <b>${voteLabels}</b>\n\n` +
+    `Voted by: @${username}` +
+    marketInfo +
+    `\n\n🔁 Auto-used your previous vote` +
+    `\n\n🔽 Buy via:\n\n${affiliateText}`;
+
+  if (tokenData?.imageUrl) {
+    await sendPhoto(chatId, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
+  } else {
+    await sendMessage(chatId, resultText, DELETE_BUTTON_MARKUP);
+  }
+
+  return;
+}
 
   const sentMsg = await sendPoll(chatId, ca, username);
   const messageId = sentMsg.result?.message_id;
