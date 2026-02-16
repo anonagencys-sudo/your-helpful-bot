@@ -226,6 +226,46 @@ const { data: previousVote } = await supabase
   .eq("user_id", userId)
   .single();
 
+// ✅ IF USER HAS GLOBAL VOTE → USE IT IMMEDIATELY (SKIP POLL EVERYWHERE)
+if (previousVote?.last_vote) {
+
+  const tokenData = await fetchTokenData(ca);
+  const affiliateText = await buildAffiliateText(ca);
+  const coinName = tokenData?.pairName || "Unknown";
+
+  const voteLabels = previousVote.last_vote
+    .split(",")
+    .map((v: string) => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v)
+    .join(", ");
+
+  const marketInfo = tokenData
+    ? `\n\n📊 <b>Stats</b>\n` +
+      `├ USD     ${tokenData.priceUsd} (${tokenData.priceChange})\n` +
+      `├ MC      ${tokenData.marketCap}\n` +
+      `├ Vol     ${tokenData.volume24h}\n` +
+      `├ LP      ${tokenData.liquidity}\n` +
+      `├ 1H      ${tokenData.change1h} 🟢${tokenData.buys} 🔴${tokenData.sells}\n` +
+      `└ FDV     ${tokenData.fdv}`
+    : "";
+
+  const resultText =
+    `📊 <b>Information about coin</b>\n\n` +
+    `🪙 <b>${coinName}</b>\n\n` +
+    `CA: <code>${ca}</code>\n\n` +
+    `Information: <b>${voteLabels}</b>\n\n` +
+    `Voted by: @${username}` +
+    marketInfo +
+    `\n\n🔁 Auto-used your previous vote` +
+    `\n\n🔽 Buy via:\n\n${affiliateText}`;
+
+  if (tokenData?.imageUrl) {
+    await sendPhoto(chatId, tokenData.imageUrl, resultText, DELETE_BUTTON_MARKUP);
+  } else {
+    await sendMessage(chatId, resultText, DELETE_BUTTON_MARKUP);
+  }
+
+  return;   // 🔴 THIS IS CRITICAL
+}
 
   const { data: existing } = await supabase
     .from("polls")
