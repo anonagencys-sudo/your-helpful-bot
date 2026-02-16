@@ -739,12 +739,12 @@ RIGHT SIDE (~65%): Clean dark blue gradient background with subtle tech circuit 
 - "${coinName}" in large bold white text
 - "${theme.label} ALERT" in smaller ${theme.accent} text below the name
 - "${highestXStr}" as the MASSIVE hero number in bold white/glowing text — this is the biggest element on the entire card
-- "octane bot" or similar bot branding in medium gray text
+- "POLLARIS" bot branding in medium gray text
 - Bottom section with two info blocks side by side:
   Left block: "TOKEN: ${coinName}" and "PRICE: ${currentPriceStr}" in small white text
   Right block: snowflake icon + "LIQ LOCKED: ${liqLocked}" in small ${theme.accent} text
 - Bottom-right: clock icon + "${timeStr} ago" in small gray text
-- Very bottom: thin dark bar with "@octane_bot" and "@caller_username" watermarks
+- Very bottom: thin dark bar with "@POLLARIS" and "@caller_username" watermarks
 
 STYLE: Dark navy/steel blue gradient background, subtle glowing ${theme.accent} accents, tech circuit board pattern faintly visible. Rounded card corners with thin white/light border. Professional, clean, crypto trading card aesthetic. 16:9 landscape ratio. NO anime background clutter.`;
 
