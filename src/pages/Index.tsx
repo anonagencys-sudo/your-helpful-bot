@@ -13,13 +13,13 @@ const cards = [
 ];
 
 const Index = () => (
-  <div className="min-h-screen bg-black p-8">
-    <h1 className="text-3xl font-bold text-white text-center mb-8">New Card Designs — Anime Style</h1>
-    <div className="flex flex-col gap-8 max-w-4xl mx-auto">
+  <div className="min-h-screen bg-black px-3 py-6 sm:p-8">
+    <h1 className="text-xl sm:text-3xl font-bold text-white text-center mb-5 sm:mb-8">New Card Designs — Anime Style</h1>
+    <div className="flex flex-col gap-5 sm:gap-8 max-w-4xl mx-auto">
       {cards.map((c) => (
-        <div key={c.name} className="flex flex-col items-center gap-3">
-          <img src={c.src} alt={c.name} className="w-full rounded-xl border border-white/10" />
-          <span className="text-white text-lg font-semibold">{c.name}</span>
+        <div key={c.name} className="flex flex-col items-center gap-2">
+          <img src={c.src} alt={c.name} className="w-full rounded-lg sm:rounded-xl border border-white/10" />
+          <span className="text-white text-sm sm:text-lg font-semibold">{c.name}</span>
         </div>
       ))}
     </div>
