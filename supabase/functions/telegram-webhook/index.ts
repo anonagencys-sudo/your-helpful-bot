@@ -740,7 +740,9 @@ async function handleCardCommand(chatId: number, ca: string) {
 - Do NOT include any real photos, use anime/illustrated style`;
 
   try {
-    await sendMessage(chatId, "🎨 Generating card...");
+    // Send "generating" message and keep its ID to delete later
+    const genMsg = await sendMessage(chatId, "🎨 Generating card...");
+    const genMsgId = genMsg?.result?.message_id;
 
     const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -760,6 +762,7 @@ async function handleCardCommand(chatId: number, ca: string) {
 
     if (!imageBase64) {
       console.error("AI image generation failed:", JSON.stringify(aiData));
+      if (genMsgId) await deleteMessage(chatId, genMsgId);
       await sendMessage(chatId, "❌ Failed to generate card image.");
       return;
     }
@@ -768,15 +771,6 @@ async function handleCardCommand(chatId: number, ca: string) {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
     const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
-    // Build caption with vote categories
-    let caption = `🃏 <b>Call Card</b> — <b>${voteCategories}</b>\n\n`;
-    caption += `🪙 <b>${coinName}</b>\n`;
-    caption += `📊 Performance: <b>${perfStr}</b>\n`;
-    caption += `💰 Called at: <b>$${entryMCStr}</b> MC\n`;
-    caption += `👤 Caller: @${callerUsername}\n`;
-    caption += `⏱ ${timeStr}\n`;
-    caption += `\nCA: <code>${ca}</code>`;
-
     const markup = {
       inline_keyboard: [[
         { text: "🗑️", callback_data: "delete_msg" },
@@ -784,18 +778,19 @@ async function handleCardCommand(chatId: number, ca: string) {
       ]],
     };
 
-    // Send photo via multipart form data
+    // Send photo with no caption (image only)
     const formData = new FormData();
     formData.append("chat_id", String(chatId));
     formData.append("photo", new Blob([binaryData], { type: "image/png" }), "card.png");
-    formData.append("caption", caption);
-    formData.append("parse_mode", "HTML");
     formData.append("reply_markup", JSON.stringify(markup));
 
     await fetch(`${TELEGRAM_API}/sendPhoto`, {
       method: "POST",
       body: formData,
     });
+
+    // Delete the "generating" message
+    if (genMsgId) await deleteMessage(chatId, genMsgId);
   } catch (err) {
     console.error("Card generation error:", err);
     await sendMessage(chatId, "❌ Failed to generate card. Try again.");
