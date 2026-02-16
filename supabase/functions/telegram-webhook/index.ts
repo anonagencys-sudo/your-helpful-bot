@@ -724,17 +724,29 @@ async function handleCardCommand(chatId: number, ca: string) {
   // Determine color based on performance
   const isPositive = entryPrice > 0 && currentPrice >= entryPrice;
   // Generate card image using AI with vote-based theme
-  const prompt = `Create a clean, minimal 16:9 landscape crypto trading card. Layout:
+  const currentMC = tokenData?.marketCap || "N/A";
+  const currentPriceStr = tokenData?.priceUsd || "N/A";
+  const liqLocked = tokenData?.liquidity && tokenData.liquidity !== "N/A" ? "YES" : "NO";
 
-LEFT (35%): A stylish anime character, ${theme.accent}-colored outfit, simple pose on a clean dark background. ${theme.label === "GAMBLE" ? "Confident boy in purple hoodie" : theme.label === "CTO" ? "Tech-savvy boy in blue jacket with goggles" : theme.label === "VOLUME" ? "Energetic boy in orange jacket" : theme.label === "GOOD DEV" ? "Smart boy in green suit with glasses" : "Elite figure in gold armor with cape"}. Anime art style, NO clutter around the character.
+  const characterDesc = theme.label === "GAMBLE" ? "Mischievous penguin character wearing VR goggles and a gold chain with a GAMBLE tag, purple/blue tones" : theme.label === "CTO" ? "Cool penguin character in tech gear with blue goggles and circuits, cyan/blue tones" : theme.label === "VOLUME" ? "Energetic penguin character with headphones and orange energy aura" : theme.label === "GOOD DEV" ? "Focused penguin character with green glasses and coding hologram" : "Elite penguin character with golden crown and mysterious aura";
 
-RIGHT (65%): Clean text layout with lots of breathing room:
-- "${theme.label}" small badge, top right
-- "${coinName}" bold white, medium size
-- "${highestXStr}" HUGE glowing ${theme.accent} text (main focus, biggest element on the card) — this is the peak return achieved
-- "@${callerUsername}" and "${timeStr}" small white/gray at bottom
+  const prompt = `Create a polished 16:9 landscape crypto trading card with rounded corners and a subtle white border. The design should look like a professional trading alert card.
 
-STYLE: Dark ${theme.bg} background, subtle ${theme.accent} border glow, minimal particles. Clean and uncluttered. NO busy backgrounds, NO floating objects. Anime illustrated style only. 16:9 landscape.`;
+LEFT SIDE (~35%): ${characterDesc}. The character should be large, detailed, and overlap slightly into the right side. At the bottom-left of the character, show a small tilted golden badge/tag that says "${theme.label}".
+
+RIGHT SIDE (~65%): Clean dark blue gradient background with subtle tech circuit patterns. Layout from top to bottom:
+- Top-right corner: small snowflake/crystal icon
+- "${coinName}" in large bold white text
+- "${theme.label} ALERT" in smaller ${theme.accent} text below the name
+- "${highestXStr}" as the MASSIVE hero number in bold white/glowing text — this is the biggest element on the entire card
+- "octane bot" or similar bot branding in medium gray text
+- Bottom section with two info blocks side by side:
+  Left block: "TOKEN: ${coinName}" and "PRICE: ${currentPriceStr}" in small white text
+  Right block: snowflake icon + "LIQ LOCKED: ${liqLocked}" in small ${theme.accent} text
+- Bottom-right: clock icon + "${timeStr} ago" in small gray text
+- Very bottom: thin dark bar with "@octane_bot" and "@caller_username" watermarks
+
+STYLE: Dark navy/steel blue gradient background, subtle glowing ${theme.accent} accents, tech circuit board pattern faintly visible. Rounded card corners with thin white/light border. Professional, clean, crypto trading card aesthetic. 16:9 landscape ratio. NO anime background clutter.`;
 
   try {
     // Send "generating" message and keep its ID to delete later
