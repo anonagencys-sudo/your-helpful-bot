@@ -594,6 +594,30 @@ function getPerformanceBar(entryPrice: number, currentPrice: number): string {
   return "▓".repeat(filled) + "░".repeat(10 - filled);
 }
 
+// Vote category → card color theme mapping
+const VOTE_THEME_MAP: Record<string, { bg: string; accent: string; label: string }> = {
+  gamble: { bg: "dark purple gradient", accent: "purple neon glow", label: "GAMBLE" },
+  cto: { bg: "dark blue/navy gradient", accent: "cyan/blue neon glow", label: "CTO" },
+  volume: { bg: "dark orange/black gradient", accent: "orange neon glow", label: "VOLUME" },
+  good_dev: { bg: "dark green/black gradient", accent: "emerald green neon glow", label: "GOOD DEV" },
+  alpha: { bg: "dark black/gold gradient", accent: "gold/yellow neon glow", label: "ALPHA" },
+};
+
+const DEFAULT_THEME = { bg: "dark gray/black gradient", accent: "white glow", label: "NO VOTE" };
+
+function getCardTheme(vote: string | null): { bg: string; accent: string; label: string } {
+  if (!vote) return DEFAULT_THEME;
+  const votes = vote.split(",").map(v => v.trim());
+  const primaryVote = votes[0];
+  return VOTE_THEME_MAP[primaryVote] || DEFAULT_THEME;
+}
+
+function getVoteCategoryLabels(vote: string | null): string {
+  if (!vote) return "No vote";
+  const votes = vote.split(",").map(v => v.trim());
+  return votes.map(v => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
+}
+
 async function handleCardCommand(chatId: number, ca: string) {
   const { data: poll } = await supabase
     .from("polls")
@@ -674,26 +698,27 @@ async function handleCardCommand(chatId: number, ca: string) {
   else if (diffH > 0) timeStr = `${diffH}h, ${diffMin % 60}m`;
   else timeStr = `${diffMin}m`;
 
+  // Get vote categories and theme
+  const voteCategories = getVoteCategoryLabels(poll.vote);
+  const theme = getCardTheme(poll.vote);
+
   // Determine color based on performance
   const isPositive = entryPrice > 0 && currentPrice >= entryPrice;
-
-  // Get token image URL for the AI to include
-  const tokenImgUrl = tokenData.imageUrl || "";
-
-  // Generate card image using AI
-  const prompt = `Create a crypto trading call card image with a dark background (dark green/black gradient). The card should have:
-- Top center: a small square token icon placeholder
-- Right side large bold text: "${coinName}" in white
-- Below that: "called at ${entryMCStr}" in gray/white text
-- Center/right: HUGE bold text "${perfStr}" in ${isPositive ? "bright neon green" : "red"} color, this should be the most prominent element
-- Below performance: "🏆 Highest: ${highestXStr}" in golden/yellow color, slightly smaller than the main performance
+  // Generate card image using AI with vote-based theme
+  const prompt = `Create a crypto trading PNL alert card image with a ${theme.bg} background and ${theme.accent} effects. The card should have:
+- Top left: bold white text "${theme.label}" as category label badge
+- Left side: a cool anime mascot character matching the ${theme.accent} color scheme
+- Right side large bold text: "${coinName}" token name in white
+- Below that: "called at $${entryMCStr}" in gray/white text
+- Center/right: HUGE bold text "${perfStr}" in ${isPositive ? "bright glowing " + theme.accent : "red"} color, this should be the most prominent element
+- Below performance: "🏆 Highest: ${highestXStr}" in golden/yellow color
+- Category info: "${voteCategories}" displayed as tags/badges
 - Below that: "👤 ${callerUsername.toUpperCase()}" in white bold
 - Below that: "⏱ ${timeStr}" in gray
-- Bottom bar: "@pollaris_test" branding in small text
-- The Solana logo icon in top right corner
-- Overall style: dark, professional crypto trading card with rounded corners and subtle glow effects
+- Bottom stats row: Entry MC $${entryMCStr} | Current MC ${tokenData.marketCap} | Price ${tokenData.priceUsd} | ATH ${tokenData.ath}
+- Overall style: sleek modern card with rounded corners, ${theme.accent} border glow, anime mascot character
 - Aspect ratio: 16:9 landscape
-- Do NOT include any real character or meme images, keep it abstract/geometric`;
+- Do NOT include any real photos, use anime/illustrated style`;
 
   try {
     await sendMessage(chatId, "🎨 Generating card...");
@@ -724,8 +749,8 @@ async function handleCardCommand(chatId: number, ca: string) {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
     const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
-    // Build caption
-    let caption = `🃏 <b>Call Card</b>\n\n`;
+    // Build caption with vote categories
+    let caption = `🃏 <b>Call Card</b> — <b>${voteCategories}</b>\n\n`;
     caption += `🪙 <b>${coinName}</b>\n`;
     caption += `📊 Performance: <b>${perfStr}</b>\n`;
     caption += `💰 Called at: <b>$${entryMCStr}</b> MC\n`;
