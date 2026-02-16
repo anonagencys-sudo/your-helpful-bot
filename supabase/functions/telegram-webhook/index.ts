@@ -595,27 +595,46 @@ function getPerformanceBar(entryPrice: number, currentPrice: number): string {
 }
 
 // Vote category → card color theme mapping
-const VOTE_THEME_MAP: Record<string, { bg: string; accent: string; label: string }> = {
-  gamble: { bg: "dark purple gradient", accent: "purple neon glow", label: "GAMBLE" },
-  cto: { bg: "dark blue/navy gradient", accent: "cyan/blue neon glow", label: "CTO" },
-  volume: { bg: "dark orange/black gradient", accent: "orange neon glow", label: "VOLUME" },
-  good_dev: { bg: "dark green/black gradient", accent: "emerald green neon glow", label: "GOOD DEV" },
-  alpha: { bg: "dark black/gold gradient", accent: "gold/yellow neon glow", label: "ALPHA" },
+const VOTE_THEME_MAP: Record<string, { bg: string; accent: string; label: string; color: string }> = {
+  gamble: { bg: "dark purple gradient", accent: "purple neon glow", label: "GAMBLE", color: "purple" },
+  cto: { bg: "dark blue/navy gradient", accent: "cyan/blue neon glow", label: "CTO", color: "cyan/blue" },
+  volume: { bg: "dark orange/black gradient", accent: "orange neon glow", label: "VOLUME", color: "orange" },
+  good_dev: { bg: "dark green/black gradient", accent: "emerald green neon glow", label: "GOOD DEV", color: "green" },
+  alpha: { bg: "dark black/gold gradient", accent: "gold/yellow neon glow", label: "ALPHA", color: "gold" },
 };
 
-const DEFAULT_THEME = { bg: "dark gray/black gradient", accent: "white glow", label: "NO VOTE" };
+const DEFAULT_THEME = { bg: "dark gray/black gradient", accent: "white glow", label: "NO VOTE", color: "white" };
 
 function getCardTheme(vote: string | null): { bg: string; accent: string; label: string } {
   if (!vote) return DEFAULT_THEME;
   const votes = vote.split(",").map(v => v.trim());
-  const primaryVote = votes[0];
-  return VOTE_THEME_MAP[primaryVote] || DEFAULT_THEME;
+  
+  if (votes.length === 1) {
+    return VOTE_THEME_MAP[votes[0]] || DEFAULT_THEME;
+  }
+  
+  // Multiple votes: blend themes
+  const themes = votes.map(v => VOTE_THEME_MAP[v]).filter(Boolean);
+  if (themes.length === 0) return DEFAULT_THEME;
+  
+  const colors = themes.map(t => t.color).join(" and ");
+  const labels = themes.map(t => t.label).join(" + ");
+  const primaryBg = themes[0].bg;
+  
+  return {
+    bg: `${primaryBg} blending into ${themes.length > 1 ? themes[1].color : ""} tones`,
+    accent: `split ${colors} neon glow (${colors} gradient blend)`,
+    label: labels,
+  };
 }
 
 function getVoteCategoryLabels(vote: string | null): string {
   if (!vote) return "No vote";
   const votes = vote.split(",").map(v => v.trim());
-  return votes.map(v => POLL_OPTIONS[OPTION_VALUES.indexOf(v)] || v).join(", ");
+  return votes.map(v => {
+    const theme = VOTE_THEME_MAP[v];
+    return theme ? theme.label : v;
+  }).join(" + ");
 }
 
 async function handleCardCommand(chatId: number, ca: string) {
