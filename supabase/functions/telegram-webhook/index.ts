@@ -724,20 +724,29 @@ async function handleCardCommand(chatId: number, ca: string) {
   // Determine color based on performance
   const isPositive = entryPrice > 0 && currentPrice >= entryPrice;
   // Generate card image using AI with vote-based theme
-  const prompt = `Create a crypto trading PNL alert card image with a ${theme.bg} background and ${theme.accent} effects. The card should have:
-- Top left: bold white text "${theme.label}" as category label badge
-- Left side: a cool anime mascot character matching the ${theme.accent} color scheme
-- Right side large bold text: "${coinName}" token name in white
-- Below that: "called at $${entryMCStr}" in gray/white text
-- Center/right: HUGE bold text "${perfStr}" in ${isPositive ? "bright glowing " + theme.accent : "red"} color, this should be the most prominent element
-- Below performance: "🏆 Highest: ${highestXStr}" in golden/yellow color
-- Category info: "${voteCategories}" displayed as tags/badges
-- Below that: "👤 ${callerUsername.toUpperCase()}" in white bold
-- Below that: "⏱ ${timeStr}" in gray
-- Bottom stats row: Entry MC $${entryMCStr} | Current MC ${tokenData.marketCap} | Price ${tokenData.priceUsd} | ATH ${tokenData.ath}
-- Overall style: sleek modern card with rounded corners, ${theme.accent} border glow, anime mascot character
-- Aspect ratio: 16:9 landscape
-- Do NOT include any real photos, use anime/illustrated style`;
+  const prompt = `Create a 16:9 landscape crypto trading card image. The design MUST feature:
+
+**ANIME CHARACTER (MAIN FOCUS - takes up 40-50% of the card):**
+- A full-body stylish anime character standing/posing on the LEFT side
+- The character should be a cool, confident crypto trader with ${theme.accent}-themed outfit
+- Anime art style: detailed, vibrant, dynamic pose, expressive eyes
+- Character should match the ${theme.label} vibe: ${theme.label === "GAMBLE" ? "mischievous gambler with dice/cards" : theme.label === "CTO" ? "tech genius with holographic screens" : theme.label === "VOLUME" ? "energetic trader with charts flying around" : theme.label === "GOOD DEV" ? "focused developer with code symbols" : "elite mysterious figure with golden aura"}
+
+**CARD INFO (RIGHT SIDE):**
+- "${theme.label}" badge in top right with ${theme.accent} glow
+- "${coinName}" in large bold white text
+- HUGE "${perfStr}" in ${isPositive ? "bright glowing " + theme.accent : "red"} - most prominent text element
+- "🏆 Highest: ${highestXStr}" in golden text
+- "Called at $${entryMCStr} MC" in smaller gray text
+- "👤 ${callerUsername.toUpperCase()}" and "⏱ ${timeStr}" in white
+- Bottom row: MC ${tokenData.marketCap} | Price ${tokenData.priceUsd}
+
+**STYLE:**
+- ${theme.bg} dark background with ${theme.accent} neon glow effects and particles
+- Sleek card border with ${theme.accent} glow
+- Anime/illustrated style ONLY - absolutely NO real photos
+- High quality anime art, detailed shading and lighting
+- 16:9 aspect ratio landscape orientation`;
 
   try {
     // Send "generating" message and keep its ID to delete later
@@ -751,7 +760,7 @@ async function handleCardCommand(chatId: number, ca: string) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image",
+        model: "google/gemini-3-pro-image-preview",
         messages: [{ role: "user", content: prompt }],
         modalities: ["image", "text"],
       }),
