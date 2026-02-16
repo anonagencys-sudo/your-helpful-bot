@@ -177,12 +177,17 @@ async function handlePollAnswer(pollAnswer:any){
     .eq("id",poll.id);
 
   /* ✅ SAVE GLOBAL USER VOTE */
-  await supabase.from("last_vote_per_user").upsert({
+ const { data:debugData, error:debugError } = await supabase
+  .from("last_vote_per_user")
+  .upsert({
     user_id:userId,
     username:pollAnswer.user?.username || "",
     last_vote:voteStr,
     updated_at:new Date().toISOString()
   });
+
+console.log("GLOBAL SAVE RESULT:", debugData, debugError);
+
 
   if(poll.message_id){
     await deleteMessage(poll.chat_id,poll.message_id);
