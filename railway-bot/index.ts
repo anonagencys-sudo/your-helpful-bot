@@ -384,15 +384,16 @@ async function handlePollAnswer(pollAnswer: any) {
   const votes = optionIds.map((i: number) => OPTION_VALUES[i]);
   const voteStr = votes.join(",");
 
-  // SAVE GLOBAL USER VOTE
+  // SAVE USER GLOBAL VOTE
 await supabase
   .from("last_vote_per_user")
   .upsert({
-    user_id: pollAnswer.user.id,
-    username: pollAnswer.user.username || "",
+    user_id: userId,
+    username: pollAnswer.user?.username || "",
     last_vote: voteStr,
     updated_at: new Date().toISOString()
   }, { onConflict: "user_id" });
+
 
 
   const { data: poll } = await supabase
