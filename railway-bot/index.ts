@@ -83,12 +83,17 @@ async function handleMessage(message:any){
   if(!ca) return;
 
 /* 1️⃣ CHECK IF THIS CA ALREADY HAS RESULT IN THIS GROUP */
-const {data:groupVote}=await supabase
+const {data:groupVotes}=await supabase
   .from("polls")
   .select("*")
   .eq("chat_id",chatId)
   .eq("contract_address",ca)
-  .maybeSingle();
+  .not("vote","is",null)
+  .order("voted_at",{ascending:false})
+  .limit(1);
+
+const groupVote = groupVotes?.[0];
+
 
 if(groupVote?.vote){
 
