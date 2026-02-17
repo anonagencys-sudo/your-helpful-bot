@@ -222,6 +222,7 @@ Deno.serve({ port: PORT }, async (req) => {
         url: webhookUrl,
         allowed_updates: [
           "message",
+          "poll",
           "poll_answer",
           "callback_query"
         ]
