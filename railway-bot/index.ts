@@ -34,20 +34,11 @@ async function buildAffiliateText(ca:string){
 return `
 🔽 <b>Buy via</b>
 
-<a href="https://gmgn.ai/r/yLK3g2v6?token=${ca}">GM</a> • 
-<a href="https://axiom.trade/@anony?token=${ca}">AXI</a> • 
-<a href="https://t.me/menelaus_trojanbot?start=r-dankanonymous-${ca}">TRO</a> • 
-<a href="https://trojan.com/@Danoanon?token=${ca}">TRT</a> • 
-<a href="https://fomo.family/r/idankanonymous?token=${ca}">FMO</a> • 
-<a href="https://t.me/BloomSolana_bot?start=ref_2PL9YX5OSY_${ca}">BLO</a>
-
-<a href="https://web3.okx.com/join/DANKANON?token=${ca}">OKX</a> • 
-<a href="https://jup.ag/?ref=qkozn35gqidu">MAE</a> • 
-<a href="https://trade.padre.gg/rk/dankanon?token=${ca}">TRM</a> • 
-<a href="https://trade.padre.gg/rk/dankanon?token=${ca}">PHO</a> • 
-<a href="https://t.me/pepeboost_sol_bot?start=ref_0fi608_${ca}">PEP</a>
+<a href="https://gmgn.ai/r/yLK3g2v6?token=${ca}">GM</a> • <a href="https://axiom.trade/@anony?token=${ca}">AXI</a> • <a href="https://t.me/menelaus_trojanbot?start=r-dankanonymous-${ca}">TRO</a> • <a href="https://trojan.com/@Danoanon?token=${ca}">TRT</a> • <a href="https://fomo.family/r/idankanonymous?token=${ca}">FMO</a> • <a href="https://t.me/BloomSolana_bot?start=ref_2PL9YX5OSY_${ca}">BLO</a>
+<a href="https://web3.okx.com/join/DANKANON?token=${ca}">OKX</a> • <a href="https://jup.ag/?ref=qkozn35gqidu">MAE</a> • <a href="https://trade.padre.gg/rk/dankanon?token=${ca}">TRM</a> • <a href="https://trade.padre.gg/rk/dankanon?token=${ca}">PHO</a> • <a href="https://t.me/pepeboost_sol_bot?start=ref_0fi608_${ca}">PEP</a>
 `;
 }
+
 
 /* ✅ FETCH TOKEN DATA */
 
