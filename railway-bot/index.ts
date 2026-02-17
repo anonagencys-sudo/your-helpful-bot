@@ -72,86 +72,92 @@ async function answerCallbackQuery(id:string){
 /* ================= HANDLE MESSAGE ================= */
 async function handleMessage(message:any){
 
-  const text=message.text;
+  const text = message.text;
   if(!text) return;
 
-  const chatId=message.chat.id;
-  const userId=message.from.id;
-  const username=message.from.username||message.from.first_name||"Unknown";
+  const chatId = message.chat.id;
+  const userId = message.from.id;
+  const username = message.from.username || message.from.first_name || "Unknown";
 
-  const ca=extractSolanaCA(text);
+  const ca = extractSolanaCA(text);
   if(!ca) return;
 
-/* 1️⃣ CHECK IF THIS CA ALREADY HAS RESULT IN THIS GROUP */
-const {data:groupVotes}=await supabase
-  .from("polls")
-  .select("*")
-  .eq("chat_id",chatId)
-  .eq("contract_address",ca)
-  .not("vote","is",null)
-  .order("voted_at",{ascending:false})
-  .limit(1);
+  /* 1️⃣ CHECK IF CA ALREADY EXISTS IN THIS GROUP */
+  const { data:existing } = await supabase
+    .from("polls")
+    .select("*")
+    .eq("chat_id",chatId)
+    .eq("contract_address",ca)
+    .order("created_at",{ascending:false})
+    .limit(1);
 
-const groupVote = groupVotes?.[0];
+  const groupPoll = existing?.[0];
 
+  if(groupPoll){
 
-if(groupVote?.vote){
+    // ✅ RESULT EXISTS
+    if(groupPoll.vote){
 
-  const labels=groupVote.vote
-    .split(",")
-    .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
-    .join(", ");
+      const labels = groupPoll.vote
+        .split(",")
+        .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
+        .join(", ");
 
-  const affiliate=await buildAffiliateText(ca);
+      const affiliate = await buildAffiliateText(ca);
 
-  await sendMessage(
-    chatId,
-    `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${groupVote.sender_username}\n\n${affiliate}`,
-    DELETE_BUTTON_MARKUP
-  );
+      await sendMessage(
+        chatId,
+        `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${groupPoll.sender_username}\n\n${affiliate}`,
+        DELETE_BUTTON_MARKUP
+      );
 
-  return;
+      return;
+    }
+
+    // ⏳ POLL OPEN
+    await sendMessage(chatId,"⏳ Poll already open for this CA.");
+    return;
+  }
+
+  /* 2️⃣ CHECK IF USER VOTED THIS CA BEFORE (OTHER GROUP) */
+  const { data:userVote } = await supabase
+    .from("user_ca_votes")
+    .select("vote")
+    .eq("user_id",userId)
+    .eq("contract_address",ca)
+    .maybeSingle();
+
+  if(userVote?.vote){
+
+    const labels = userVote.vote
+      .split(",")
+      .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
+      .join(", ");
+
+    const affiliate = await buildAffiliateText(ca);
+
+    await sendMessage(
+      chatId,
+      `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${username}\n\n🔁 Auto-used your previous vote\n\n${affiliate}`,
+      DELETE_BUTTON_MARKUP
+    );
+
+    return;
+  }
+
+  /* 3️⃣ CREATE NEW POLL */
+  const sent = await sendPoll(chatId);
+
+  await supabase.from("polls").insert({
+    chat_id:chatId,
+    contract_address:ca,
+    sender_user_id:userId,
+    sender_username:username,
+    message_id:sent.result?.message_id,
+    telegram_poll_id:sent.result?.poll?.id
+  });
+
 }
-
-
-/* 2️⃣ CHECK IF THIS USER VOTED THIS CA BEFORE */
-const {data:userVote}=await supabase
-  .from("user_ca_votes")
-  .select("vote")
-  .eq("user_id",userId)
-  .eq("contract_address",ca)
-  .maybeSingle();
-
-if(userVote?.vote){
-
-  const labels=userVote.vote
-    .split(",")
-    .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
-    .join(", ");
-
-  const affiliate=await buildAffiliateText(ca);
-
-  await sendMessage(
-    chatId,
-    `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${username}\n\n🔁 Auto-used your previous vote\n\n${affiliate}`,
-    DELETE_BUTTON_MARKUP
-  );
-
-  return;
-}
-
-
-/* 3️⃣ CREATE NEW POLL */
-const sent=await sendPoll(chatId);
-
-await supabase.from("polls").insert({
-  chat_id:chatId,
-  contract_address:ca,
-  sender_user_id:userId,
-  sender_username:username,
-  message_id:sent.result?.message_id,
-  telegram_poll_id:sent.result?.poll?.id
-});
 
 /* ================= HANDLE POLL ANSWER ================= */
 async function handlePollAnswer(pollAnswer:any){
