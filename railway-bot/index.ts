@@ -70,6 +70,8 @@ async function answerCallbackQuery(id:string){
 }
 
 /* ================= HANDLE MESSAGE ================= */
+
+
 async function handleMessage(message:any){
 
   const text = message.text;
@@ -84,22 +86,21 @@ async function handleMessage(message:any){
 
 
   /* ===========================
-     1️⃣ CHECK GROUP RESULT FIRST
+     1️⃣ GROUP RESULT CHECK
   =========================== */
-  const {data:groupVotes}=await supabase
+  const {data:group}=await supabase
     .from("polls")
     .select("*")
     .eq("chat_id",chatId)
     .eq("contract_address",ca)
     .not("vote","is",null)
-    .order("voted_at",{ascending:false})
     .limit(1);
 
-  const groupVote = groupVotes?.[0];
+  if(group?.length){
 
-  if(groupVote){
+    const vote = group[0].vote;
 
-    const labels = groupVote.vote
+    const labels = vote
       .split(",")
       .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
       .join(", ");
@@ -108,7 +109,11 @@ async function handleMessage(message:any){
 
     await sendMessage(
       chatId,
-      `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${groupVote.sender_username}\n\n${affiliate}`,
+      `📊 <b>Information about coin</b>\n\n`+
+      `CA: <code>${ca}</code>\n\n`+
+      `Information: <b>${labels}</b>\n\n`+
+      `Voted by: @${group[0].sender_username}\n\n`+
+      `${affiliate}`,
       DELETE_BUTTON_MARKUP
     );
 
@@ -117,22 +122,31 @@ async function handleMessage(message:any){
 
 
   /* ===========================
-     2️⃣ CHECK IF THIS USER ALREADY VOTED THIS CA ANYWHERE
+     2️⃣ USER PREVIOUS VOTE CHECK
   =========================== */
-  const {data:userVote}=await supabase
+  const {data:user}=await supabase
     .from("polls")
     .select("*")
     .eq("sender_user_id",userId)
     .eq("contract_address",ca)
     .not("vote","is",null)
-    .order("voted_at",{ascending:false})
     .limit(1);
 
-  const previousUserVote = userVote?.[0];
+  if(user?.length){
 
-  if(previousUserVote){
+    const vote=user[0].vote;
 
-    const labels = previousUserVote.vote
+    // 👉 SAVE THIS RESULT INTO CURRENT GROUP
+    await supabase.from("polls").insert({
+      chat_id:chatId,
+      contract_address:ca,
+      sender_user_id:userId,
+      sender_username:username,
+      vote:vote,
+      voted_at:new Date().toISOString()
+    });
+
+    const labels = vote
       .split(",")
       .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
       .join(", ");
@@ -141,7 +155,11 @@ async function handleMessage(message:any){
 
     await sendMessage(
       chatId,
-      `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${username}\n\n🔁 Auto-used your previous vote\n\n${affiliate}`,
+      `📊 <b>Information about coin</b>\n\n`+
+      `CA: <code>${ca}</code>\n\n`+
+      `Information: <b>${labels}</b>\n\n`+
+      `🔁 Auto-used your previous vote\n\n`+
+      `${affiliate}`,
       DELETE_BUTTON_MARKUP
     );
 
@@ -150,7 +168,7 @@ async function handleMessage(message:any){
 
 
   /* ===========================
-     3️⃣ OTHERWISE CREATE POLL
+     3️⃣ CREATE POLL
   =========================== */
 
   const sent=await sendPoll(chatId,ca);
@@ -165,6 +183,7 @@ async function handleMessage(message:any){
   });
 
 }
+
 
 
 /* ================= HANDLE POLL ANSWER ================= */
