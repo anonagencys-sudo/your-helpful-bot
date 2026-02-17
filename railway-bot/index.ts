@@ -206,36 +206,83 @@ console.log("GLOBAL SAVE RESULT:", debugData, debugError);
 /* ===========================
    SERVER
 =========================== */
-Deno.serve({port:PORT}, async(req)=>{
+Deno.serve({ port: PORT }, async (req) => {
 
   const url = new URL(req.url);
 
-  if(req.method==="GET"){
-    return new Response(JSON.stringify({status:"ok"}),{headers:{"Content-Type":"application/json"}});
+  /* ✅ REGISTER WEBHOOK */
+  if (req.method === "GET" && url.searchParams.get("action") === "register") {
+
+    const webhookUrl = Deno.env.get("WEBHOOK_URL")!;
+
+    const res = await fetch(`${TELEGRAM_API}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        allowed_updates: [
+          "message",
+          "poll_answer",
+          "callback_query"
+        ]
+      }),
+    });
+
+    const data = await res.json();
+    console.log("Webhook registered:", data);
+
+    return new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  try{
-    const update = await req.json();
+  /* ✅ CHECK WEBHOOK STATUS */
+  if (req.method === "GET" && url.searchParams.get("action") === "status") {
 
-    if(update.message){
+    const res = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+    const data = await res.json();
+
+    return new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  /* ✅ HEALTH CHECK */
+  if (req.method === "GET") {
+    return new Response(
+      JSON.stringify({ status: "ok", bot: "running" }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  /* ✅ TELEGRAM UPDATES */
+  try {
+
+    const update = await req.json();
+    console.log("UPDATE RECEIVED:", JSON.stringify(update));
+
+    if (update.message) {
       await handleMessage(update.message);
     }
-    else if(update.poll_answer){
+    else if (update.poll_answer) {
+      console.log("POLL ANSWER RECEIVED");
       await handlePollAnswer(update.poll_answer);
     }
-    else if(update.callback_query){
-      const cb=update.callback_query;
-      if(cb.data==="delete_msg" && cb.message){
-        await deleteMessage(cb.message.chat.id,cb.message.message_id);
+    else if (update.callback_query) {
+      const cb = update.callback_query;
+      if (cb.data === "delete_msg" && cb.message) {
+        await deleteMessage(cb.message.chat.id, cb.message.message_id);
         await answerCallbackQuery(cb.id);
       }
     }
 
-    return new Response(JSON.stringify({ok:true}),{headers:{"Content-Type":"application/json"}});
-  }
-  catch(err){
-    console.error(err);
-    return new Response("error",{status:500});
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { "Content-Type": "application/json" },
+    });
+
+  } catch (err) {
+    console.error("Webhook error:", err);
+    return new Response("error", { status: 500 });
   }
 
 });
