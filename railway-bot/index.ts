@@ -86,10 +86,25 @@ async function handleMessage(message:any){
 
   /* ✅ CHECK GLOBAL USER VOTE */
   const { data: previousVote } = await supabase
-    .from("last_vote_per_user")
-    .select("last_vote")
-    .eq("user_id",userId)
-    .maybeSingle();
+  .from("last_vote_per_user")
+  .select("*")
+  .eq("user_id", userId)
+  .maybeSingle();
+
+let usePrevious = false;
+
+if (previousVote?.updated_at) {
+
+  const last = new Date(previousVote.updated_at).getTime();
+  const now = Date.now();
+
+  const diffMinutes = (now - last) / 60000;
+
+  if (diffMinutes <= 10) {
+    usePrevious = true;
+  }
+}
+
 
   if(previousVote?.last_vote){
 
