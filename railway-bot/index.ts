@@ -151,46 +151,67 @@ async function handleMessage(message:any){
 /* ===========================
    HANDLE POLL ANSWER
 =========================== */
-async function handlePollAnswer(pollAnswer:any){
+async function handlePollAnswer(pollAnswer: any) {
 
   const pollId = pollAnswer.poll_id;
   const userId = pollAnswer.user?.id;
   const optionIds = pollAnswer.option_ids;
 
-  if(!optionIds?.length) return;
+  if (!optionIds?.length) return;
 
   const voteStr = optionIds.map((i:number)=>OPTION_VALUES[i]).join(",");
 
-  const { data: poll } = await supabase
+  console.log("VOTE RECEIVED FOR POLL:", pollId);
+
+  // ✅ GET EXACT POLL ENTRY
+  const { data: poll, error } = await supabase
     .from("polls")
     .select("*")
-    .eq("telegram_poll_id",pollId)
+    .eq("telegram_poll_id", pollId)
     .maybeSingle();
 
-  if(!poll) return;
-  if(poll.sender_user_id!==userId) return;
-  if(poll.vote) return;
+  if (error) {
+    console.log("DB ERROR:", error);
+    return;
+  }
 
-  /* SAVE POLL RESULT */
+  // ❌ ignore unknown poll
+  if (!poll) {
+    console.log("IGNORED: poll not found", pollId);
+    return;
+  }
+
+  // ❌ ignore if already voted (stale update)
+  if (poll.vote) {
+    console.log("IGNORED: poll already has vote");
+    return;
+  }
+
+  // ❌ only sender can vote
+  if (poll.sender_user_id !== userId) {
+    console.log("IGNORED: not sender");
+    return;
+  }
+
+  // ✅ SAVE POLL RESULT
   await supabase.from("polls")
-    .update({ vote:voteStr, voted_at:new Date().toISOString() })
-    .eq("id",poll.id);
+    .update({
+      vote: voteStr,
+      voted_at: new Date().toISOString()
+    })
+    .eq("id", poll.id);
 
-  /* ✅ SAVE GLOBAL USER VOTE */
- const { data:debugData, error:debugError } = await supabase
-  .from("last_vote_per_user")
-  .upsert({
-    user_id:userId,
-    username:pollAnswer.user?.username || "",
-    last_vote:voteStr,
-    updated_at:new Date().toISOString()
+  // ✅ SAVE GLOBAL USER VOTE
+  await supabase.from("last_vote_per_user").upsert({
+    user_id: userId,
+    username: pollAnswer.user?.username || "",
+    last_vote: voteStr,
+    updated_at: new Date().toISOString()
   });
 
-console.log("GLOBAL SAVE RESULT:", debugData, debugError);
-
-
-  if(poll.message_id){
-    await deleteMessage(poll.chat_id,poll.message_id);
+  // delete poll message
+  if (poll.message_id) {
+    await deleteMessage(poll.chat_id, poll.message_id);
   }
 
   const labels = optionIds.map((i:number)=>POLL_OPTIONS[i]).join(", ");
@@ -201,6 +222,8 @@ console.log("GLOBAL SAVE RESULT:", debugData, debugError);
     `📊 <b>Information about coin</b>\n\nCA: <code>${poll.contract_address}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${poll.sender_username}\n\n${affiliate}`,
     DELETE_BUTTON_MARKUP
   );
+
+  console.log("VOTE SAVED FOR:", poll.contract_address);
 }
 
 /* ===========================
