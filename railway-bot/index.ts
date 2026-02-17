@@ -82,17 +82,20 @@ async function handleMessage(message:any){
   const ca=extractSolanaCA(text);
   if(!ca) return;
 
-  /* ✅ CHECK IF USER ALREADY VOTED THIS CA */
-  const {data:prev}=await supabase
-    .from("user_ca_votes")
-    .select("vote")
-    .eq("user_id",userId)
-    .eq("contract_address",ca)
-    .maybeSingle();
+  /* CHECK IF THIS CA ALREADY HAS RESULT IN THIS GROUP */
+const {data:existing}=await supabase
+  .from("polls")
+  .select("*")
+  .eq("chat_id",chatId)
+  .eq("contract_address",ca)
+  .maybeSingle();
 
-  if(prev?.vote){
+if(existing){
 
-    const labels=prev.vote
+  // ✅ IF RESULT EXISTS → SHOW IT
+  if(existing.vote){
+
+    const labels=existing.vote
       .split(",")
       .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
       .join(", ");
@@ -101,11 +104,17 @@ async function handleMessage(message:any){
 
     await sendMessage(
       chatId,
-      `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${username}\n\n🔁 Auto-used your previous vote\n\n${affiliate}`,
+      `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${existing.sender_username}\n\n${affiliate}`,
       DELETE_BUTTON_MARKUP
     );
+
     return;
   }
+
+  // ⏳ POLL STILL OPEN
+  await sendMessage(chatId,"⏳ Poll still open.");
+  return;
+}
 
   /* CHECK EXISTING POLL IN THIS CHAT */
   const {data:existing}=await supabase
