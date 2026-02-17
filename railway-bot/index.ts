@@ -82,78 +82,71 @@ async function handleMessage(message:any){
   const ca=extractSolanaCA(text);
   if(!ca) return;
 
-  /* CHECK IF THIS CA ALREADY HAS RESULT IN THIS GROUP */
-const {data:existing}=await supabase
+/* 1️⃣ CHECK IF THIS CA ALREADY HAS RESULT IN THIS GROUP */
+const {data:groupVote}=await supabase
   .from("polls")
   .select("*")
   .eq("chat_id",chatId)
   .eq("contract_address",ca)
   .maybeSingle();
 
-if(existing){
+if(groupVote?.vote){
 
-  // ✅ IF RESULT EXISTS → SHOW IT
-  if(existing.vote){
+  const labels=groupVote.vote
+    .split(",")
+    .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
+    .join(", ");
 
-    const labels=existing.vote
-      .split(",")
-      .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
-      .join(", ");
+  const affiliate=await buildAffiliateText(ca);
 
-    const affiliate=await buildAffiliateText(ca);
+  await sendMessage(
+    chatId,
+    `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${groupVote.sender_username}\n\n${affiliate}`,
+    DELETE_BUTTON_MARKUP
+  );
 
-    await sendMessage(
-      chatId,
-      `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${existing.sender_username}\n\n${affiliate}`,
-      DELETE_BUTTON_MARKUP
-    );
-
-    return;
-  }
-
-  // ⏳ POLL STILL OPEN
-  await sendMessage(chatId,"⏳ Poll still open.");
   return;
 }
 
-  /* CHECK EXISTING POLL IN THIS CHAT */
-  const {data:existing}=await supabase
-    .from("polls")
-    .select("*")
-    .eq("chat_id",chatId)
-    .eq("contract_address",ca)
-    .maybeSingle();
 
-  if(existing){
-    if(existing.vote){
-      const labels=existing.vote
-        .split(",")
-        .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
-        .join(", ");
+/* 2️⃣ CHECK IF THIS USER VOTED THIS CA BEFORE */
+const {data:userVote}=await supabase
+  .from("user_ca_votes")
+  .select("vote")
+  .eq("user_id",userId)
+  .eq("contract_address",ca)
+  .maybeSingle();
 
-      await sendMessage(
-        chatId,
-        `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${existing.sender_username}`,
-        DELETE_BUTTON_MARKUP
-      );
-    }else{
-      await sendMessage(chatId,"⏳ Poll still open.");
-    }
-    return;
-  }
+if(userVote?.vote){
 
-  /* CREATE NEW POLL */
-  const sent=await sendPoll(chatId);
+  const labels=userVote.vote
+    .split(",")
+    .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
+    .join(", ");
 
-  await supabase.from("polls").insert({
-    chat_id:chatId,
-    contract_address:ca,
-    sender_user_id:userId,
-    sender_username:username,
-    message_id:sent.result?.message_id,
-    telegram_poll_id:sent.result?.poll?.id
-  });
+  const affiliate=await buildAffiliateText(ca);
+
+  await sendMessage(
+    chatId,
+    `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${username}\n\n🔁 Auto-used your previous vote\n\n${affiliate}`,
+    DELETE_BUTTON_MARKUP
+  );
+
+  return;
 }
+
+
+/* 3️⃣ CREATE NEW POLL */
+const sent=await sendPoll(chatId);
+
+await supabase.from("polls").insert({
+  chat_id:chatId,
+  contract_address:ca,
+  sender_user_id:userId,
+  sender_username:username,
+  message_id:sent.result?.message_id,
+  telegram_poll_id:sent.result?.poll?.id
+});
 
 /* ================= HANDLE POLL ANSWER ================= */
 async function handlePollAnswer(pollAnswer:any){
