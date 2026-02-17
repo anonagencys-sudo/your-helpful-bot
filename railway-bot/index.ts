@@ -82,59 +82,62 @@ async function handleMessage(message:any){
   const ca = extractSolanaCA(text);
   if(!ca) return;
 
-  /* 1️⃣ CHECK IF CA ALREADY EXISTS IN THIS GROUP */
-  const { data:existing } = await supabase
+
+  /* ===========================
+     1️⃣ CHECK GROUP RESULT FIRST
+  =========================== */
+  const {data:groupVotes}=await supabase
     .from("polls")
     .select("*")
     .eq("chat_id",chatId)
     .eq("contract_address",ca)
-    .order("created_at",{ascending:false})
+    .not("vote","is",null)
+    .order("voted_at",{ascending:false})
     .limit(1);
 
-  const groupPoll = existing?.[0];
+  const groupVote = groupVotes?.[0];
 
-  if(groupPoll){
+  if(groupVote){
 
-    // ✅ RESULT EXISTS
-    if(groupPoll.vote){
-
-      const labels = groupPoll.vote
-        .split(",")
-        .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
-        .join(", ");
-
-      const affiliate = await buildAffiliateText(ca);
-
-      await sendMessage(
-        chatId,
-        `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${groupPoll.sender_username}\n\n${affiliate}`,
-        DELETE_BUTTON_MARKUP
-      );
-
-      return;
-    }
-
-    // ⏳ POLL OPEN
-    await sendMessage(chatId,"⏳ Poll already open for this CA.");
-    return;
-  }
-
-  /* 2️⃣ CHECK IF USER VOTED THIS CA BEFORE (OTHER GROUP) */
-  const { data:userVote } = await supabase
-    .from("user_ca_votes")
-    .select("vote")
-    .eq("user_id",userId)
-    .eq("contract_address",ca)
-    .maybeSingle();
-
-  if(userVote?.vote){
-
-    const labels = userVote.vote
+    const labels = groupVote.vote
       .split(",")
       .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
       .join(", ");
 
-    const affiliate = await buildAffiliateText(ca);
+    const affiliate=await buildAffiliateText(ca);
+
+    await sendMessage(
+      chatId,
+      `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${groupVote.sender_username}\n\n${affiliate}`,
+      DELETE_BUTTON_MARKUP
+    );
+
+    return;
+  }
+
+
+  /* ===========================
+     2️⃣ CHECK IF THIS USER ALREADY VOTED THIS CA ANYWHERE
+  =========================== */
+  const {data:userVote}=await supabase
+    .from("polls")
+    .select("*")
+    .eq("sender_user_id",userId)
+    .eq("contract_address",ca)
+    .not("vote","is",null)
+    .order("voted_at",{ascending:false})
+    .limit(1);
+
+  const previousUserVote = userVote?.[0];
+
+  if(previousUserVote){
+
+    const labels = previousUserVote.vote
+      .split(",")
+      .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
+      .join(", ");
+
+    const affiliate=await buildAffiliateText(ca);
 
     await sendMessage(
       chatId,
@@ -145,8 +148,12 @@ async function handleMessage(message:any){
     return;
   }
 
-  /* 3️⃣ CREATE NEW POLL */
-  const sent = await sendPoll(chatId);
+
+  /* ===========================
+     3️⃣ OTHERWISE CREATE POLL
+  =========================== */
+
+  const sent=await sendPoll(chatId,ca);
 
   await supabase.from("polls").insert({
     chat_id:chatId,
@@ -158,6 +165,7 @@ async function handleMessage(message:any){
   });
 
 }
+
 
 /* ================= HANDLE POLL ANSWER ================= */
 async function handlePollAnswer(pollAnswer:any){
