@@ -12,7 +12,7 @@ const POLL_OPTIONS = ["CTO","Volume","Good dev","Gamble","Alpha"];
 const OPTION_VALUES = ["cto","volume","good_dev","gamble","alpha"];
 
 const DELETE_BUTTON_MARKUP = {
-  inline_keyboard: [[{ text: "🗑️", callback_data: "delete_msg" }]],
+  inline_keyboard: [[{ text:"🗑️", callback_data:"delete_msg"}]],
 };
 
 function extractSolanaCA(text:string){
@@ -20,12 +20,89 @@ function extractSolanaCA(text:string){
   return match?match[0]:null;
 }
 
+function formatNumber(num:number){
+  if(!num) return "N/A";
+  if(num>=1e9) return (num/1e9).toFixed(2)+"B";
+  if(num>=1e6) return (num/1e6).toFixed(2)+"M";
+  if(num>=1e3) return (num/1e3).toFixed(1)+"K";
+  return num.toString();
+}
+
 async function buildAffiliateText(ca:string){
   return `<a href="https://gmgn.ai/token/${ca}">GM</a>`;
 }
 
+/* ================= FETCH DATA ================= */
+
+async function fetchDexData(ca:string){
+  try{
+    const r=await fetch(`https://api.dexscreener.com/latest/dex/tokens/${ca}`);
+    const j=await r.json();
+    return j?.pairs?.[0]||null;
+  }catch{return null;}
+}
+
+async function fetchSecurityData(ca:string){
+  try{
+    const r=await fetch(`https://api.rugcheck.xyz/v1/tokens/${ca}`);
+    const j=await r.json();
+    return{
+      fresh:j?.stats?.fresh_wallets_pct??"N/A",
+      top10:j?.stats?.top10_pct??"N/A",
+      devSold:j?.dev?.sold?"🔴 Yes":"🟢 No",
+      dexPaid:j?.dex?.paid?"🟢 Paid":"🔴 Unpaid"
+    };
+  }catch{return null;}
+}
+
+/* ================= BUILD RESULT ================= */
+
+async function buildFullMessage(ca:string,labels:string,voter:string){
+
+  const pair=await fetchDexData(ca);
+  const security=await fetchSecurityData(ca);
+  const affiliate=await buildAffiliateText(ca);
+
+  const stats=pair?`
+📊 <b>Stats</b>
+├ USD     $${pair.priceUsd??"N/A"} (${pair.priceChange?.h24??"N/A"}%)
+├ MC      $${formatNumber(pair.marketCap)}
+├ Vol     $${formatNumber(pair.volume?.h24)}
+├ LP      $${formatNumber(pair.liquidity?.usd)}
+├ 1H      ${pair.priceChange?.h1??"N/A"}% 🟢${pair.txns?.h1?.buys??0} 🔴${pair.txns?.h1?.sells??0}
+└ FDV     $${formatNumber(pair.fdv)}
+`:"";
+
+  const socials=pair?.info?.socials?.length
+    ?`\n🔗 <b>Socials</b>\n`+
+      pair.info.socials.map((s:any)=>`• <a href="${s.url}">${s.type}</a>`).join("\n")
+    :"";
+
+  const securityText=security?`
+\n🔒 <b>Security</b>
+├ Fresh     ${security.fresh}
+├ Top 10    ${security.top10}
+├ Dev Sold  ${security.devSold}
+└ DEX Paid  ${security.dexPaid}
+`:"";
+
+  const text=
+`📊 <b>Information about coin</b>\n\n`+
+`CA: <code>${ca}</code>\n\n`+
+`Information: <b>${labels}</b>\n\n`+
+`Voted by: ${voter}`+
+stats+
+socials+
+securityText+
+`\n\n${affiliate}`;
+
+  return{ text,image:pair?.info?.imageUrl };
+}
+
+/* ================= TELEGRAM HELPERS ================= */
+
 async function sendPoll(chatId:number){
-  const res=await fetch(`${TELEGRAM_API}/sendPoll`,{
+  const r=await fetch(`${TELEGRAM_API}/sendPoll`,{
     method:"POST",
     headers:{ "Content-Type":"application/json"},
     body:JSON.stringify({
@@ -36,7 +113,7 @@ async function sendPoll(chatId:number){
       allows_multiple_answers:true
     })
   });
-  return res.json();
+  return r.json();
 }
 
 async function sendMessage(chatId:number,text:string,markup?:any){
@@ -53,11 +130,25 @@ async function sendMessage(chatId:number,text:string,markup?:any){
   });
 }
 
-async function deleteMessage(chatId:number,messageId:number){
+async function sendPhoto(chatId:number,url:string,caption:string){
+  await fetch(`${TELEGRAM_API}/sendPhoto`,{
+    method:"POST",
+    headers:{ "Content-Type":"application/json"},
+    body:JSON.stringify({
+      chat_id:chatId,
+      photo:url,
+      caption,
+      parse_mode:"HTML",
+      reply_markup:JSON.stringify(DELETE_BUTTON_MARKUP)
+    })
+  });
+}
+
+async function deleteMessage(chatId:number,id:number){
   await fetch(`${TELEGRAM_API}/deleteMessage`,{
     method:"POST",
     headers:{ "Content-Type":"application/json"},
-    body:JSON.stringify({ chat_id:chatId,message_id:messageId })
+    body:JSON.stringify({chat_id:chatId,message_id:id})
   });
 }
 
@@ -65,113 +156,82 @@ async function answerCallbackQuery(id:string){
   await fetch(`${TELEGRAM_API}/answerCallbackQuery`,{
     method:"POST",
     headers:{ "Content-Type":"application/json"},
-    body:JSON.stringify({ callback_query_id:id })
+    body:JSON.stringify({callback_query_id:id})
   });
 }
 
 /* ================= HANDLE MESSAGE ================= */
 
-
 async function handleMessage(message:any){
 
-  const text = message.text;
+  const text=message.text;
   if(!text) return;
 
-  const chatId = message.chat.id;
-  const userId = message.from.id;
-  const username = message.from.username || message.from.first_name || "Unknown";
+  const chatId=message.chat.id;
+  const userId=message.from.id;
+  const username=message.from.username||message.from.first_name||"Unknown";
 
-  const ca = extractSolanaCA(text);
+  const ca=extractSolanaCA(text);
   if(!ca) return;
 
-
-  /* ===========================
-     1️⃣ GROUP RESULT CHECK
-  =========================== */
+  /* 1️⃣ GROUP RESULT EXISTS */
   const {data:group}=await supabase
     .from("polls")
     .select("*")
     .eq("chat_id",chatId)
     .eq("contract_address",ca)
     .not("vote","is",null)
-    .limit(1);
+    .maybeSingle();
 
-  if(group?.length){
+  if(group?.vote){
 
-    const vote = group[0].vote;
-
-    const labels = vote
+    const labels=group.vote
       .split(",")
       .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
       .join(", ");
 
-    const affiliate=await buildAffiliateText(ca);
+    const msg=await buildFullMessage(ca,labels,`@${group.sender_username}`);
 
-    await sendMessage(
-      chatId,
-      `📊 <b>Information about coin</b>\n\n`+
-      `CA: <code>${ca}</code>\n\n`+
-      `Information: <b>${labels}</b>\n\n`+
-      `Voted by: @${group[0].sender_username}\n\n`+
-      `${affiliate}`,
-      DELETE_BUTTON_MARKUP
-    );
+    if(msg.image) await sendPhoto(chatId,msg.image,msg.text);
+    else await sendMessage(chatId,msg.text,DELETE_BUTTON_MARKUP);
 
     return;
   }
 
-
-  /* ===========================
-     2️⃣ USER PREVIOUS VOTE CHECK
-  =========================== */
-  const {data:user}=await supabase
-    .from("polls")
+  /* 2️⃣ SAME USER VOTED BEFORE (ANY GROUP) */
+  const {data:userVote}=await supabase
+    .from("user_ca_votes")
     .select("*")
-    .eq("sender_user_id",userId)
+    .eq("user_id",userId)
     .eq("contract_address",ca)
-    .not("vote","is",null)
-    .limit(1);
+    .maybeSingle();
 
-  if(user?.length){
+  if(userVote?.vote){
 
-    const vote=user[0].vote;
-
-    // 👉 SAVE THIS RESULT INTO CURRENT GROUP
     await supabase.from("polls").insert({
       chat_id:chatId,
       contract_address:ca,
       sender_user_id:userId,
       sender_username:username,
-      vote:vote,
+      vote:userVote.vote,
       voted_at:new Date().toISOString()
     });
 
-    const labels = vote
+    const labels=userVote.vote
       .split(",")
       .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
       .join(", ");
 
-    const affiliate=await buildAffiliateText(ca);
+    const msg=await buildFullMessage(ca,labels,`@${username}`);
 
-    await sendMessage(
-      chatId,
-      `📊 <b>Information about coin</b>\n\n`+
-      `CA: <code>${ca}</code>\n\n`+
-      `Information: <b>${labels}</b>\n\n`+
-      `🔁 Auto-used your previous vote\n\n`+
-      `${affiliate}`,
-      DELETE_BUTTON_MARKUP
-    );
+    if(msg.image) await sendPhoto(chatId,msg.image,msg.text);
+    else await sendMessage(chatId,msg.text,DELETE_BUTTON_MARKUP);
 
     return;
   }
 
-
-  /* ===========================
-     3️⃣ CREATE POLL
-  =========================== */
-
-  const sent=await sendPoll(chatId,ca);
+  /* 3️⃣ CREATE POLL */
+  const sent=await sendPoll(chatId);
 
   await supabase.from("polls").insert({
     chat_id:chatId,
@@ -181,12 +241,10 @@ async function handleMessage(message:any){
     message_id:sent.result?.message_id,
     telegram_poll_id:sent.result?.poll?.id
   });
-
 }
 
-
-
 /* ================= HANDLE POLL ANSWER ================= */
+
 async function handlePollAnswer(pollAnswer:any){
 
   const pollId=pollAnswer.poll_id;
@@ -202,15 +260,12 @@ async function handlePollAnswer(pollAnswer:any){
     .eq("telegram_poll_id",pollId)
     .maybeSingle();
 
-  if(!poll) return;
-  if(poll.vote) return;
-  if(poll.sender_user_id!==userId) return;
+  if(!poll||poll.vote||poll.sender_user_id!==userId) return;
 
   await supabase.from("polls")
     .update({vote:voteStr,voted_at:new Date().toISOString()})
     .eq("id",poll.id);
 
-  /* ✅ SAVE USER+CA VOTE HISTORY */
   await supabase.from("user_ca_votes").upsert({
     user_id:userId,
     contract_address:poll.contract_address,
@@ -218,28 +273,24 @@ async function handlePollAnswer(pollAnswer:any){
     username:pollAnswer.user?.username||""
   },{onConflict:"user_id,contract_address"});
 
-  if(poll.message_id){
-    await deleteMessage(poll.chat_id,poll.message_id);
-  }
+  if(poll.message_id) await deleteMessage(poll.chat_id,poll.message_id);
 
   const labels=optionIds.map((i:number)=>POLL_OPTIONS[i]).join(", ");
-  const affiliate=await buildAffiliateText(poll.contract_address);
+  const msg=await buildFullMessage(poll.contract_address,labels,`@${poll.sender_username}`);
 
-  await sendMessage(
-    poll.chat_id,
-    `📊 <b>Information about coin</b>\n\nCA: <code>${poll.contract_address}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${poll.sender_username}\n\n${affiliate}`,
-    DELETE_BUTTON_MARKUP
-  );
+  if(msg.image) await sendPhoto(poll.chat_id,msg.image,msg.text);
+  else await sendMessage(poll.chat_id,msg.text,DELETE_BUTTON_MARKUP);
 }
 
 /* ================= SERVER ================= */
+
 Deno.serve({port:PORT},async(req)=>{
 
   const url=new URL(req.url);
 
   if(req.method==="GET" && url.searchParams.get("action")==="register"){
     const webhookUrl=Deno.env.get("WEBHOOK_URL")!;
-    const res=await fetch(`${TELEGRAM_API}/setWebhook`,{
+    const r=await fetch(`${TELEGRAM_API}/setWebhook`,{
       method:"POST",
       headers:{ "Content-Type":"application/json"},
       body:JSON.stringify({
@@ -247,12 +298,12 @@ Deno.serve({port:PORT},async(req)=>{
         allowed_updates:["message","poll","poll_answer","callback_query"]
       })
     });
-    return new Response(await res.text());
+    return new Response(await r.text());
   }
 
   if(req.method==="GET" && url.searchParams.get("action")==="status"){
-    const res=await fetch(`${TELEGRAM_API}/getWebhookInfo`);
-    return new Response(await res.text());
+    const r=await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+    return new Response(await r.text());
   }
 
   if(req.method==="GET"){
