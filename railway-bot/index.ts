@@ -16,23 +16,40 @@ const DELETE_BUTTON_MARKUP = {
 };
 
 function extractSolanaCA(text:string){
-  const match=text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
-  return match?match[0]:null;
+  const m=text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
+  return m?m[0]:null;
 }
 
-function formatNumber(num:number){
-  if(!num) return "N/A";
-  if(num>=1e9) return (num/1e9).toFixed(2)+"B";
-  if(num>=1e6) return (num/1e6).toFixed(2)+"M";
-  if(num>=1e3) return (num/1e3).toFixed(1)+"K";
-  return num.toString();
+function formatNumber(n:number){
+  if(!n) return "N/A";
+  if(n>=1e9) return (n/1e9).toFixed(2)+"B";
+  if(n>=1e6) return (n/1e6).toFixed(2)+"M";
+  if(n>=1e3) return (n/1e3).toFixed(1)+"K";
+  return String(Math.round(n));
 }
+
+/* ✅ BUY VIA LINKS */
 
 async function buildAffiliateText(ca:string){
-  return `<a href="https://gmgn.ai/token/${ca}">GM</a>`;
+return `
+🔽 <b>Buy via</b>
+
+<a href="https://gmgn.ai/r/yLK3g2v6?token=${ca}">GM</a> • 
+<a href="https://axiom.trade/@anony?token=${ca}">AXI</a> • 
+<a href="https://t.me/menelaus_trojanbot?start=r-dankanonymous-${ca}">TRO</a> • 
+<a href="https://trojan.com/@Danoanon?token=${ca}">TRT</a> • 
+<a href="https://fomo.family/r/idankanonymous?token=${ca}">FMO</a> • 
+<a href="https://t.me/BloomSolana_bot?start=ref_2PL9YX5OSY_${ca}">BLO</a>
+
+<a href="https://web3.okx.com/join/DANKANON?token=${ca}">OKX</a> • 
+<a href="https://jup.ag/?ref=qkozn35gqidu">MAE</a> • 
+<a href="https://trade.padre.gg/rk/dankanon?token=${ca}">TRM</a> • 
+<a href="https://trade.padre.gg/rk/dankanon?token=${ca}">PHO</a> • 
+<a href="https://t.me/pepeboost_sol_bot?start=ref_0fi608_${ca}">PEP</a>
+`;
 }
 
-/* ================= FETCH DATA ================= */
+/* ✅ FETCH TOKEN DATA */
 
 async function fetchDexData(ca:string){
   try{
@@ -42,20 +59,22 @@ async function fetchDexData(ca:string){
   }catch{return null;}
 }
 
+/* ✅ SECURITY (rugcheck optional) */
+
 async function fetchSecurityData(ca:string){
   try{
     const r=await fetch(`https://api.rugcheck.xyz/v1/tokens/${ca}`);
     const j=await r.json();
     return{
-      fresh:j?.stats?.fresh_wallets_pct??"N/A",
-      top10:j?.stats?.top10_pct??"N/A",
-      devSold:j?.dev?.sold?"🔴 Yes":"🟢 No",
-      dexPaid:j?.dex?.paid?"🟢 Paid":"🔴 Unpaid"
+      fresh:j?.stats?.fresh_wallets_pct ?? "N/A",
+      top10:j?.stats?.top10_pct ?? "N/A",
+      devSold:j?.dev?.sold ? "🔴 Yes" : "🟢 No",
+      dexPaid:j?.dex?.paid ? "🟢 Paid" : "🔴 Unpaid"
     };
   }catch{return null;}
 }
 
-/* ================= BUILD RESULT ================= */
+/* ✅ BUILD FULL RESULT MESSAGE */
 
 async function buildFullMessage(ca:string,labels:string,voter:string){
 
@@ -87,19 +106,22 @@ async function buildFullMessage(ca:string,labels:string,voter:string){
 `:"";
 
   const text=
-`📊 <b>Information about coin</b>\n\n`+
-`CA: <code>${ca}</code>\n\n`+
-`Information: <b>${labels}</b>\n\n`+
-`Voted by: ${voter}`+
+`📊 <b>Information about coin</b>
+
+CA: <code>${ca}</code>
+
+Information: <b>${labels}</b>
+
+Voted by: ${voter}`+
 stats+
 socials+
 securityText+
 `\n\n${affiliate}`;
 
-  return{ text,image:pair?.info?.imageUrl };
+  return { text, image:pair?.info?.imageUrl };
 }
 
-/* ================= TELEGRAM HELPERS ================= */
+/* TELEGRAM HELPERS */
 
 async function sendPoll(chatId:number){
   const r=await fetch(`${TELEGRAM_API}/sendPoll`,{
@@ -160,7 +182,7 @@ async function answerCallbackQuery(id:string){
   });
 }
 
-/* ================= HANDLE MESSAGE ================= */
+/* HANDLE MESSAGE */
 
 async function handleMessage(message:any){
 
@@ -174,7 +196,7 @@ async function handleMessage(message:any){
   const ca=extractSolanaCA(text);
   if(!ca) return;
 
-  /* 1️⃣ GROUP RESULT EXISTS */
+  /* GROUP RESULT EXISTS */
   const {data:group}=await supabase
     .from("polls")
     .select("*")
@@ -184,21 +206,14 @@ async function handleMessage(message:any){
     .maybeSingle();
 
   if(group?.vote){
-
-    const labels=group.vote
-      .split(",")
-      .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
-      .join(", ");
-
+    const labels=group.vote.split(",").map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v).join(", ");
     const msg=await buildFullMessage(ca,labels,`@${group.sender_username}`);
-
     if(msg.image) await sendPhoto(chatId,msg.image,msg.text);
     else await sendMessage(chatId,msg.text,DELETE_BUTTON_MARKUP);
-
     return;
   }
 
-  /* 2️⃣ SAME USER VOTED BEFORE (ANY GROUP) */
+  /* USER VOTED BEFORE ANY GROUP */
   const {data:userVote}=await supabase
     .from("user_ca_votes")
     .select("*")
@@ -217,11 +232,7 @@ async function handleMessage(message:any){
       voted_at:new Date().toISOString()
     });
 
-    const labels=userVote.vote
-      .split(",")
-      .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
-      .join(", ");
-
+    const labels=userVote.vote.split(",").map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v).join(", ");
     const msg=await buildFullMessage(ca,labels,`@${username}`);
 
     if(msg.image) await sendPhoto(chatId,msg.image,msg.text);
@@ -230,7 +241,7 @@ async function handleMessage(message:any){
     return;
   }
 
-  /* 3️⃣ CREATE POLL */
+  /* CREATE POLL */
   const sent=await sendPoll(chatId);
 
   await supabase.from("polls").insert({
@@ -243,7 +254,7 @@ async function handleMessage(message:any){
   });
 }
 
-/* ================= HANDLE POLL ANSWER ================= */
+/* HANDLE POLL ANSWER */
 
 async function handlePollAnswer(pollAnswer:any){
 
@@ -282,7 +293,7 @@ async function handlePollAnswer(pollAnswer:any){
   else await sendMessage(poll.chat_id,msg.text,DELETE_BUTTON_MARKUP);
 }
 
-/* ================= SERVER ================= */
+/* SERVER */
 
 Deno.serve({port:PORT},async(req)=>{
 
@@ -329,5 +340,5 @@ Deno.serve({port:PORT},async(req)=>{
     console.error(e);
     return new Response("error",{status:500});
   }
-
 });
+
