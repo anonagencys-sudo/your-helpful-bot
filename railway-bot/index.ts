@@ -15,17 +15,17 @@ const DELETE_BUTTON_MARKUP = {
   inline_keyboard: [[{ text: "🗑️", callback_data: "delete_msg" }]],
 };
 
-function extractSolanaCA(text: string): string | null {
-  const match = text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
-  return match ? match[0] : null;
+function extractSolanaCA(text:string){
+  const match=text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
+  return match?match[0]:null;
 }
 
-async function buildAffiliateText(ca: string) {
+async function buildAffiliateText(ca:string){
   return `<a href="https://gmgn.ai/token/${ca}">GM</a>`;
 }
 
-async function sendPoll(chatId:number, ca:string) {
-  const res = await fetch(`${TELEGRAM_API}/sendPoll`,{
+async function sendPoll(chatId:number){
+  const res=await fetch(`${TELEGRAM_API}/sendPoll`,{
     method:"POST",
     headers:{ "Content-Type":"application/json"},
     body:JSON.stringify({
@@ -69,63 +69,46 @@ async function answerCallbackQuery(id:string){
   });
 }
 
-/* ===========================
-   HANDLE MESSAGE
-=========================== */
+/* ================= HANDLE MESSAGE ================= */
 async function handleMessage(message:any){
 
-  const text = message.text;
+  const text=message.text;
   if(!text) return;
 
-  const chatId = message.chat.id;
-  const userId = message.from.id;
-  const username = message.from.username || message.from.first_name || "Unknown";
+  const chatId=message.chat.id;
+  const userId=message.from.id;
+  const username=message.from.username||message.from.first_name||"Unknown";
 
-  const ca = extractSolanaCA(text);
+  const ca=extractSolanaCA(text);
   if(!ca) return;
 
-  /* ✅ CHECK GLOBAL USER VOTE */
-  const { data: previousVote } = await supabase
-  .from("last_vote_per_user")
-  .select("*")
-  .eq("user_id", userId)
-  .maybeSingle();
+  /* ✅ CHECK IF USER ALREADY VOTED THIS CA */
+  const {data:prev}=await supabase
+    .from("user_ca_votes")
+    .select("vote")
+    .eq("user_id",userId)
+    .eq("contract_address",ca)
+    .maybeSingle();
 
-let usePrevious = false;
+  if(prev?.vote){
 
-if (previousVote?.updated_at) {
-
-  const last = new Date(previousVote.updated_at).getTime();
-  const now = Date.now();
-
-  const diffMinutes = (now - last) / 60000;
-
-  if (diffMinutes <= 10) {
-    usePrevious = true;
-  }
-}
-
-
-  if(previousVote?.last_vote){
-
-    const labels = previousVote.last_vote
+    const labels=prev.vote
       .split(",")
       .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
       .join(", ");
 
-    const affiliate = await buildAffiliateText(ca);
+    const affiliate=await buildAffiliateText(ca);
 
     await sendMessage(
       chatId,
       `📊 <b>Information about coin</b>\n\nCA: <code>${ca}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${username}\n\n🔁 Auto-used your previous vote\n\n${affiliate}`,
       DELETE_BUTTON_MARKUP
     );
-
     return;
   }
 
-  /* CHECK EXISTING POLL */
-  const { data: existing } = await supabase
+  /* CHECK EXISTING POLL IN THIS CHAT */
+  const {data:existing}=await supabase
     .from("polls")
     .select("*")
     .eq("chat_id",chatId)
@@ -134,7 +117,7 @@ if (previousVote?.updated_at) {
 
   if(existing){
     if(existing.vote){
-      const labels = existing.vote
+      const labels=existing.vote
         .split(",")
         .map((v:string)=>POLL_OPTIONS[OPTION_VALUES.indexOf(v)]||v)
         .join(", ");
@@ -150,8 +133,8 @@ if (previousVote?.updated_at) {
     return;
   }
 
-  /* CREATE POLL */
-  const sent = await sendPoll(chatId,ca);
+  /* CREATE NEW POLL */
+  const sent=await sendPoll(chatId);
 
   await supabase.from("polls").insert({
     chat_id:chatId,
@@ -163,165 +146,97 @@ if (previousVote?.updated_at) {
   });
 }
 
-/* ===========================
-   HANDLE POLL ANSWER
-=========================== */
-async function handlePollAnswer(pollAnswer: any) {
+/* ================= HANDLE POLL ANSWER ================= */
+async function handlePollAnswer(pollAnswer:any){
 
-  const pollId = pollAnswer.poll_id;
-  const userId = pollAnswer.user?.id;
-  const optionIds = pollAnswer.option_ids;
+  const pollId=pollAnswer.poll_id;
+  const userId=pollAnswer.user?.id;
+  const optionIds=pollAnswer.option_ids;
+  if(!optionIds?.length) return;
 
-  if (!optionIds?.length) return;
+  const voteStr=optionIds.map((i:number)=>OPTION_VALUES[i]).join(",");
 
-  const voteStr = optionIds.map((i:number)=>OPTION_VALUES[i]).join(",");
-
-  console.log("VOTE RECEIVED FOR POLL:", pollId);
-
-  // ✅ GET EXACT POLL ENTRY
-  const { data: poll, error } = await supabase
+  const {data:poll}=await supabase
     .from("polls")
     .select("*")
-    .eq("telegram_poll_id", pollId)
+    .eq("telegram_poll_id",pollId)
     .maybeSingle();
 
-  if (error) {
-    console.log("DB ERROR:", error);
-    return;
-  }
+  if(!poll) return;
+  if(poll.vote) return;
+  if(poll.sender_user_id!==userId) return;
 
-  // ❌ ignore unknown poll
-  if (!poll) {
-    console.log("IGNORED: poll not found", pollId);
-    return;
-  }
-
-  // ❌ ignore if already voted (stale update)
-  if (poll.vote) {
-    console.log("IGNORED: poll already has vote");
-    return;
-  }
-
-  // ❌ only sender can vote
-  if (poll.sender_user_id !== userId) {
-    console.log("IGNORED: not sender");
-    return;
-  }
-
-  // ✅ SAVE POLL RESULT
   await supabase.from("polls")
-    .update({
-      vote: voteStr,
-      voted_at: new Date().toISOString()
-    })
-    .eq("id", poll.id);
+    .update({vote:voteStr,voted_at:new Date().toISOString()})
+    .eq("id",poll.id);
 
-  // ✅ SAVE GLOBAL USER VOTE
-  await supabase.from("last_vote_per_user").upsert({
-    user_id: userId,
-    username: pollAnswer.user?.username || "",
-    last_vote: voteStr,
-    updated_at: new Date().toISOString()
-  });
+  /* ✅ SAVE USER+CA VOTE HISTORY */
+  await supabase.from("user_ca_votes").upsert({
+    user_id:userId,
+    contract_address:poll.contract_address,
+    vote:voteStr,
+    username:pollAnswer.user?.username||""
+  },{onConflict:"user_id,contract_address"});
 
-  // delete poll message
-  if (poll.message_id) {
-    await deleteMessage(poll.chat_id, poll.message_id);
+  if(poll.message_id){
+    await deleteMessage(poll.chat_id,poll.message_id);
   }
 
-  const labels = optionIds.map((i:number)=>POLL_OPTIONS[i]).join(", ");
-  const affiliate = await buildAffiliateText(poll.contract_address);
+  const labels=optionIds.map((i:number)=>POLL_OPTIONS[i]).join(", ");
+  const affiliate=await buildAffiliateText(poll.contract_address);
 
   await sendMessage(
     poll.chat_id,
     `📊 <b>Information about coin</b>\n\nCA: <code>${poll.contract_address}</code>\n\nInformation: <b>${labels}</b>\n\nVoted by: @${poll.sender_username}\n\n${affiliate}`,
     DELETE_BUTTON_MARKUP
   );
-
-  console.log("VOTE SAVED FOR:", poll.contract_address);
 }
 
-/* ===========================
-   SERVER
-=========================== */
-Deno.serve({ port: PORT }, async (req) => {
+/* ================= SERVER ================= */
+Deno.serve({port:PORT},async(req)=>{
 
-  const url = new URL(req.url);
+  const url=new URL(req.url);
 
-  /* ✅ REGISTER WEBHOOK */
-  if (req.method === "GET" && url.searchParams.get("action") === "register") {
-
-    const webhookUrl = Deno.env.get("WEBHOOK_URL")!;
-
-    const res = await fetch(`${TELEGRAM_API}/setWebhook`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: webhookUrl,
-        allowed_updates: [
-          "message",
-          "poll",
-          "poll_answer",
-          "callback_query"
-        ]
-      }),
+  if(req.method==="GET" && url.searchParams.get("action")==="register"){
+    const webhookUrl=Deno.env.get("WEBHOOK_URL")!;
+    const res=await fetch(`${TELEGRAM_API}/setWebhook`,{
+      method:"POST",
+      headers:{ "Content-Type":"application/json"},
+      body:JSON.stringify({
+        url:webhookUrl,
+        allowed_updates:["message","poll","poll_answer","callback_query"]
+      })
     });
-
-    const data = await res.json();
-    console.log("Webhook registered:", data);
-
-    return new Response(JSON.stringify(data), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(await res.text());
   }
 
-  /* ✅ CHECK WEBHOOK STATUS */
-  if (req.method === "GET" && url.searchParams.get("action") === "status") {
-
-    const res = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
-    const data = await res.json();
-
-    return new Response(JSON.stringify(data), {
-      headers: { "Content-Type": "application/json" },
-    });
+  if(req.method==="GET" && url.searchParams.get("action")==="status"){
+    const res=await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+    return new Response(await res.text());
   }
 
-  /* ✅ HEALTH CHECK */
-  if (req.method === "GET") {
-    return new Response(
-      JSON.stringify({ status: "ok", bot: "running" }),
-      { headers: { "Content-Type": "application/json" } }
-    );
+  if(req.method==="GET"){
+    return new Response(JSON.stringify({status:"ok"}));
   }
 
-  /* ✅ TELEGRAM UPDATES */
-  try {
+  try{
+    const update=await req.json();
 
-    const update = await req.json();
-    console.log("UPDATE RECEIVED:", JSON.stringify(update));
-
-    if (update.message) {
-      await handleMessage(update.message);
-    }
-    else if (update.poll_answer) {
-      console.log("POLL ANSWER RECEIVED");
-      await handlePollAnswer(update.poll_answer);
-    }
-    else if (update.callback_query) {
-      const cb = update.callback_query;
-      if (cb.data === "delete_msg" && cb.message) {
-        await deleteMessage(cb.message.chat.id, cb.message.message_id);
+    if(update.message) await handleMessage(update.message);
+    else if(update.poll_answer) await handlePollAnswer(update.poll_answer);
+    else if(update.callback_query){
+      const cb=update.callback_query;
+      if(cb.data==="delete_msg" && cb.message){
+        await deleteMessage(cb.message.chat.id,cb.message.message_id);
         await answerCallbackQuery(cb.id);
       }
     }
 
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
-
-  } catch (err) {
-    console.error("Webhook error:", err);
-    return new Response("error", { status: 500 });
+    return new Response(JSON.stringify({ok:true}));
+  }
+  catch(e){
+    console.error(e);
+    return new Response("error",{status:500});
   }
 
 });
